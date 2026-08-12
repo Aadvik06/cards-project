@@ -1,0 +1,14 @@
+[
+  {"id": "amex_mmt_flight_voucher", "name": "MakeMyTrip Gift Voucher", "travel_type": "flight", "purchase_form": "voucher"},
+  {"id": "amex_cleartrip_generic_voucher", "name": "Cleartrip Generic E-Gift Voucher", "travel_type": "flight", "purchase_form": "voucher"},
+  {"id": "amex_goibibo_hotel_voucher", "name": "Goibibo Hotel E-Gift Voucher", "travel_type": "hotel", "purchase_form": "voucher"},
+  {"id": "amex_easemytrip_hotel_voucher", "name": "Easemytrip Hotel E-Gift Voucher", "travel_type": "hotel", "purchase_form": "voucher"},
+  {"id": "amex_mmt_hotel_voucher", "name": "MakeMyTrip Hotel E-Gift Voucher", "travel_type": "hotel", "purchase_form": "voucher"},
+  {"id": "amex_cleartrip_hotel_voucher", "name": "Cleartrip Generic E-Gift Voucher", "travel_type": "hotel", "purchase_form": "voucher"},
+  {"id": "hdfc_smartbuy_flight", "name": "HDFC SmartBuy", "travel_type": "flight", "purchase_form": "portal"},
+  {"id": "hdfc_smartbuy_hotel", "name": "HDFC SmartBuy", "travel_type": "hotel", "purchase_form": "portal"},
+  {"id": "icici_ishop_flight", "name": "ICICI iShop", "travel_type": "flight", "purchase_form": "portal"},
+  {"id": "icici_ishop_hotel", "name": "ICICI iShop", "travel_type": "hotel", "purchase_form": "portal"},
+  {"id": "amex_fine_hotels", "name": "American Express Fine Hotels", "travel_type": "hotel", "purchase_form": "concierge"}
+]
+

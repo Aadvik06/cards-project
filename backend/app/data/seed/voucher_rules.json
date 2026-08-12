@@ -1,0 +1,9 @@
+[
+  {"card_id": "amex", "vendor_id": "amex_mmt_flight_voucher", "transaction_cap": "30000", "description": "3 gift vouchers, highest 10000"},
+  {"card_id": "amex", "vendor_id": "amex_cleartrip_generic_voucher", "transaction_cap": "150000", "description": "15 gift vouchers, highest 10000"},
+  {"card_id": "amex", "vendor_id": "amex_goibibo_hotel_voucher", "transaction_cap": "30000", "description": "3 gift vouchers, highest 10000"},
+  {"card_id": "amex", "vendor_id": "amex_easemytrip_hotel_voucher", "transaction_cap": "30000", "description": "3 gift vouchers, highest 10000"},
+  {"card_id": "amex", "vendor_id": "amex_mmt_hotel_voucher", "transaction_cap": "30000", "description": "3 gift vouchers, highest 10000"},
+  {"card_id": "amex", "vendor_id": "amex_cleartrip_hotel_voucher", "transaction_cap": "150000", "description": "15 gift vouchers, highest 10000"}
+]
+

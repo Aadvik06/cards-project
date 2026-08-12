@@ -1,0 +1,39 @@
+[
+  {
+    "id": "amex",
+    "name": "American Express",
+    "base_rate": "0.03",
+    "point_value_rupees": "0.67",
+    "daily_bonus_cap": "25000",
+    "cycle_bonus_cap": "25000",
+    "refresh_type": "calendar_month",
+    "statement_day": null,
+    "flight_multiplier": "10",
+    "hotel_multiplier": "10"
+  },
+  {
+    "id": "hdfc_infinia",
+    "name": "HDFC Infinia",
+    "base_rate": "0.0333",
+    "point_value_rupees": "1",
+    "daily_bonus_cap": "15000",
+    "cycle_bonus_cap": "15000",
+    "refresh_type": "calendar_month",
+    "statement_day": null,
+    "flight_multiplier": "5",
+    "hotel_multiplier": "10"
+  },
+  {
+    "id": "icici_times_black",
+    "name": "ICICI Times Black",
+    "base_rate": "0.02",
+    "point_value_rupees": "1",
+    "daily_bonus_cap": "8000",
+    "cycle_bonus_cap": "15000",
+    "refresh_type": "statement_date",
+    "statement_day": 1,
+    "flight_multiplier": "6",
+    "hotel_multiplier": "12"
+  }
+]
+

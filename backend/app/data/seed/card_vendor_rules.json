@@ -1,0 +1,14 @@
+[
+  {"card_id": "amex", "vendor_id": "amex_mmt_flight_voucher"},
+  {"card_id": "amex", "vendor_id": "amex_cleartrip_generic_voucher"},
+  {"card_id": "amex", "vendor_id": "amex_goibibo_hotel_voucher"},
+  {"card_id": "amex", "vendor_id": "amex_easemytrip_hotel_voucher"},
+  {"card_id": "amex", "vendor_id": "amex_mmt_hotel_voucher"},
+  {"card_id": "amex", "vendor_id": "amex_cleartrip_hotel_voucher"},
+  {"card_id": "amex", "vendor_id": "amex_fine_hotels", "multiplier_override": "1"},
+  {"card_id": "hdfc_infinia", "vendor_id": "hdfc_smartbuy_flight"},
+  {"card_id": "hdfc_infinia", "vendor_id": "hdfc_smartbuy_hotel"},
+  {"card_id": "icici_times_black", "vendor_id": "icici_ishop_flight"},
+  {"card_id": "icici_times_black", "vendor_id": "icici_ishop_hotel"}
+]
+
