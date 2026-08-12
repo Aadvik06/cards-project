@@ -140,6 +140,32 @@ class RecommendationEngineTests(unittest.TestCase):
 
         self.assertEqual(Decimal("0.0000"), second.ranked_options[0].awarded_bonus_points)
 
+    def test_recommendation_and_decision_survive_service_restart(self) -> None:
+        db_path = Path(self.tmpdir.name) / "restart.sqlite3"
+        first_service = RecommendationService(ledger=AuditLedger(db_path))
+        recommendation = first_service.create_recommendation(
+            employee_id="emp-6",
+            travel_type=TravelType.FLIGHT,
+            quotes=[QuoteInput("hdfc_smartbuy_flight", Decimal("10869"))],
+        )
+        first_service.record_decision(
+            recommendation_id=recommendation.id,
+            accepted=True,
+            selected_option_id=recommendation.ranked_options[0].id,
+        )
+
+        restarted_service = RecommendationService(ledger=AuditLedger(db_path))
+        restarted_transactions = TransactionService(restarted_service)
+
+        transaction = restarted_transactions.finalize_transaction(
+            recommendation_id=recommendation.id,
+            final_amount_paid=Decimal("10899"),
+            paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+        self.assertEqual(recommendation.id, transaction.recommendation_id)
+        self.assertEqual(1, len(restarted_service.ledger.read_transactions()))
+
 
 if __name__ == "__main__":
     unittest.main()

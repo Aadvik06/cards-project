@@ -1,12 +1,12 @@
 # Cards Project
 
-Backend for a deterministic travel credit-card optimizer. The goal is to help employees choose the best card and vendor for flights and hotels by minimizing effective cost while still showing the full best-to-worst ranking for qualitative decisions.
+User-friendly travel credit-card optimizer for flight and hotel bookings. The backend calculates the best card/vendor option, and the frontend guides employees through the booking flow without exposing technical details.
 
 This backend does not use machine learning. It uses explicit math rules taken from the `Cards Project.xlsx` workbook.
 
 ## Current Scope
 
-- Backend only.
+- Backend and simple web frontend.
 - Ranks all eligible card/vendor options from best to worst.
 - Also returns a best-to-worst card ranking so employees can choose based on qualitative factors.
 - Records whether the employee accepted or declined the recommendation.
@@ -14,7 +14,8 @@ This backend does not use machine learning. It uses explicit math rules taken fr
 - Does not write transaction history when a recommendation is generated.
 - Does not write transaction history when a decision is recorded.
 - Writes the monthly audit transaction log only after the employee submits the final amount paid.
-- Uses finalized historical transactions to reduce future daily/monthly/statement-cycle cap availability.
+- Stores recommendations, decisions, and finalized transactions in a local SQLite database.
+- Uses finalized historical transactions from the database to reduce future daily/monthly/statement-cycle cap availability.
 
 ## Project Structure
 
@@ -30,7 +31,7 @@ backend/
       errors.py                 # Domain exceptions
     data/
       repositories/
-        audit_ledger.py         # JSONL decision and transaction logs
+        audit_ledger.py         # SQLite recommendation, decision, and transaction storage
         rules_repository.py     # Loads seed rules
       seed/
         cards.json              # Card rates, caps, point values
@@ -51,6 +52,10 @@ backend/
       transaction_service.py    # Final paid amount logging
       cap_usage_service.py      # Historical cap usage
       monthly_log_service.py    # Monthly audit log view
+    static/
+      index.html                # Employee booking interface
+      styles.css                # Frontend styling
+      app.js                    # Frontend workflow and API calls
     main.py                     # FastAPI app factory
   tests/
     test_recommendation_engine.py
@@ -78,6 +83,17 @@ Ranking order:
 3. Lowest price after discount
 4. Card name
 5. Vendor name
+
+## Employee Flow
+
+The web page guides the employee through four steps:
+
+1. Choose flight or hotel.
+2. Enter prices for the vendors they checked.
+3. Review the ranked card options and choose one.
+4. Enter the final amount paid at checkout.
+
+The transaction is only logged after step 4.
 
 ## API Flow
 
@@ -162,6 +178,27 @@ Example:
 GET /logs/monthly/2026/8
 ```
 
+## Database
+
+The backend uses SQLite through Python's built-in `sqlite3` library. There is no separate database server to install.
+
+By default, runtime data is stored here:
+
+```text
+backend/data/runtime/cards_project.sqlite3
+```
+
+The database stores:
+
+- recommendations shown to employees
+- ranked recommendation options
+- accepted/declined decisions
+- decline reasons
+- finalized paid transactions
+- calculated points and net cost for audit review
+
+Card and vendor rules are still kept in JSON seed files because they are simple configuration data right now.
+
 ## Run Locally
 
 From the repository root:
@@ -175,6 +212,12 @@ uvicorn app.main:create_app --factory --reload
 ```
 
 Open:
+
+```text
+http://127.0.0.1:8000/
+```
+
+API docs are also available at:
 
 ```text
 http://127.0.0.1:8000/docs
@@ -203,4 +246,4 @@ The tests cover:
 - ICICI cap reset uses `statement_day` from seed data. It is currently set to `1` until the actual statement date is provided.
 - The workbook had an inconsistency for ICICI multipliers. The seed data follows the main card table: `6x` flights and `12x` hotels.
 - American Express Fine Hotels is modeled as base-points-only using a vendor-specific multiplier override of `1`.
-- Runtime logs are written under `backend/data/runtime/` and should not be committed.
+- Runtime SQLite database files are written under `backend/data/runtime/` and should not be committed.

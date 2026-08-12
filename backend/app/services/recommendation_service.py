@@ -45,12 +45,16 @@ class RecommendationService:
             usage_by_card=self.cap_usage.usage_for(target_date),
         )
         self._pending[recommendation.id] = recommendation
+        self.ledger.save_recommendation(recommendation)
         return recommendation
 
     def get_recommendation(self, recommendation_id: str) -> Recommendation:
         recommendation = self._pending.get(recommendation_id)
         if recommendation is None:
+            recommendation = self.ledger.get_recommendation(recommendation_id)
+        if recommendation is None:
             raise NotFoundError(f"Unknown recommendation: {recommendation_id}")
+        self._pending[recommendation.id] = recommendation
         return recommendation
 
     def record_decision(
@@ -97,5 +101,9 @@ class RecommendationService:
         return decision
 
     def get_decision(self, recommendation_id: str) -> DecisionRecord | None:
-        return self._decisions.get(recommendation_id)
-
+        decision = self._decisions.get(recommendation_id)
+        if decision is None:
+            decision = self.ledger.get_decision(recommendation_id)
+        if decision is not None:
+            self._decisions[recommendation_id] = decision
+        return decision
