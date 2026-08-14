@@ -32,6 +32,7 @@ class QuoteRequest(BaseModel):
 
 class RecommendationCreateRequest(BaseModel):
     employee_id: str | None = None
+    employee_name: str | None = None
     travel_type: TravelType
     travel_date: date | None = None
     quotes: list[QuoteRequest] = Field(min_length=1)
@@ -130,6 +131,15 @@ class FinalizeTransactionRequest(BaseModel):
     selected_card_id: str | None = None
     selected_vendor_id: str | None = None
     paid_at: datetime | None = None
+    details: dict[str, str] = Field(default_factory=dict)
+
+
+class VoucherLogRequest(BaseModel):
+    employee_name: str | None = None
+    vendor_name: str
+    final_amount_paid: Decimal = Field(gt=0)
+    paid_at: datetime | None = None
+    description: str
 
 
 class TransactionResponse(BaseModel):
@@ -147,10 +157,10 @@ class TransactionResponse(BaseModel):
     points_value_rupees: Decimal
     net_cost: Decimal
     paid_at: datetime
+    details: dict[str, str] = Field(default_factory=dict)
     created_at: datetime
     transaction_logged: bool = True
 
     @classmethod
     def from_domain(cls, transaction: TransactionRecord) -> "TransactionResponse":
         return cls(**transaction.__dict__)
-

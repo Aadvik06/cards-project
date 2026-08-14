@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
@@ -17,23 +18,28 @@ from app.domain.models import (
 
 
 class AuditLedger:
-    def __init__(self, db_path: Path | str = "data/runtime/cards_project.sqlite3") -> None:
-        self.db_path = Path(db_path)
-        if self.db_path.exists() and self.db_path.is_dir():
-            self.db_path = self.db_path / "cards_project.sqlite3"
-        elif self.db_path.suffix == "":
-            self.db_path = self.db_path / "cards_project.sqlite3"
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(
+        self,
+        db_path: Path | str | None = None,
+        database_url: str | None = None,
+    ) -> None:
+        self.database_url = database_url or (os.environ.get("DATABASE_URL") if db_path is None else None)
+        self.db_path: Path | None = None
+
+        if self.database_url is None:
+            self.db_path = Path(db_path or "data/runtime/cards_project.sqlite3")
+            if self.db_path.exists() and self.db_path.is_dir():
+                self.db_path = self.db_path / "cards_project.sqlite3"
+            elif self.db_path.suffix == "":
+                self.db_path = self.db_path / "cards_project.sqlite3"
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+
         self._initialize()
 
     def save_recommendation(self, recommendation: Recommendation) -> None:
         with self._connect() as connection:
             connection.execute(
-                """
-                INSERT OR REPLACE INTO recommendations (
-                    id, employee_id, travel_type, quotes_json, created_at
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
+                self._upsert_recommendation_sql(),
                 (
                     recommendation.id,
                     recommendation.employee_id,
@@ -43,11 +49,12 @@ class AuditLedger:
                 ),
             )
             connection.execute(
-                "DELETE FROM recommendation_options WHERE recommendation_id = ?",
+                self._sql("DELETE FROM recommendation_options WHERE recommendation_id = ?"),
                 (recommendation.id,),
             )
             connection.executemany(
-                """
+                self._sql(
+                    """
                 INSERT INTO recommendation_options (
                     id, recommendation_id, rank, card_id, card_name, vendor_id, vendor_name,
                     travel_type, listed_amount, eligible_amount, cash_component, discount_rate,
@@ -55,7 +62,8 @@ class AuditLedger:
                     capped_bonus_points, total_points, points_value_rupees, net_cost,
                     cap_remaining_after, explanation, card_rank
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+                """
+                ),
                 [
                     self._option_row(recommendation.id, option, self._card_rank(recommendation, option))
                     for option in recommendation.ranked_options
@@ -65,18 +73,20 @@ class AuditLedger:
     def get_recommendation(self, recommendation_id: str) -> Recommendation | None:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT * FROM recommendations WHERE id = ?",
+                self._sql("SELECT * FROM recommendations WHERE id = ?"),
                 (recommendation_id,),
             ).fetchone()
             if row is None:
                 return None
 
             option_rows = connection.execute(
-                """
+                self._sql(
+                    """
                 SELECT * FROM recommendation_options
                 WHERE recommendation_id = ?
                 ORDER BY rank ASC
-                """,
+                """
+                ),
                 (recommendation_id,),
             ).fetchall()
 
@@ -110,12 +120,7 @@ class AuditLedger:
     def append_decision(self, decision: DecisionRecord) -> None:
         with self._connect() as connection:
             connection.execute(
-                """
-                INSERT OR REPLACE INTO decisions (
-                    recommendation_id, accepted, selected_option_id, selected_card_id,
-                    selected_vendor_id, decline_reason, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
+                self._upsert_decision_sql(),
                 (
                     decision.recommendation_id,
                     int(decision.accepted),
@@ -130,13 +135,15 @@ class AuditLedger:
     def append_transaction(self, transaction: TransactionRecord) -> None:
         with self._connect() as connection:
             connection.execute(
-                """
+                self._sql(
+                    """
                 INSERT INTO transactions (
                     id, recommendation_id, employee_id, travel_type, card_id, vendor_id,
                     final_amount_paid, discount_rate, base_points, bonus_points, total_points,
-                    points_value_rupees, net_cost, paid_at, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+                    points_value_rupees, net_cost, paid_at, details_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                ),
                 (
                     transaction.id,
                     transaction.recommendation_id,
@@ -152,6 +159,7 @@ class AuditLedger:
                     str(transaction.points_value_rupees),
                     str(transaction.net_cost),
                     transaction.paid_at.isoformat(),
+                    json.dumps(transaction.details),
                     transaction.created_at.isoformat(),
                 ),
             )
@@ -166,7 +174,7 @@ class AuditLedger:
     def get_decision(self, recommendation_id: str) -> DecisionRecord | None:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT * FROM decisions WHERE recommendation_id = ?",
+                self._sql("SELECT * FROM decisions WHERE recommendation_id = ?"),
                 (recommendation_id,),
             ).fetchone()
         if row is None:
@@ -188,6 +196,14 @@ class AuditLedger:
             ).fetchall()
         return [self._dict(row) for row in rows]
 
+    def delete_transaction(self, transaction_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                self._sql("DELETE FROM transactions WHERE id = ?"),
+                (transaction_id,),
+            )
+            return cursor.rowcount > 0
+
     def monthly_transactions(self, year: int, month: int) -> list[dict[str, Any]]:
         rows = []
         for row in self.read_transactions():
@@ -198,85 +214,152 @@ class AuditLedger:
 
     def _initialize(self) -> None:
         with self._connect() as connection:
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS recommendations (
-                    id TEXT PRIMARY KEY,
-                    employee_id TEXT,
-                    travel_type TEXT NOT NULL,
-                    quotes_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS recommendation_options (
-                    id TEXT PRIMARY KEY,
-                    recommendation_id TEXT NOT NULL,
-                    rank INTEGER NOT NULL,
-                    card_id TEXT NOT NULL,
-                    card_name TEXT NOT NULL,
-                    vendor_id TEXT NOT NULL,
-                    vendor_name TEXT NOT NULL,
-                    travel_type TEXT NOT NULL,
-                    listed_amount TEXT NOT NULL,
-                    eligible_amount TEXT NOT NULL,
-                    cash_component TEXT NOT NULL,
-                    discount_rate TEXT NOT NULL,
-                    price_after_discount TEXT NOT NULL,
-                    base_points TEXT NOT NULL,
-                    raw_bonus_points TEXT NOT NULL,
-                    awarded_bonus_points TEXT NOT NULL,
-                    capped_bonus_points TEXT NOT NULL,
-                    total_points TEXT NOT NULL,
-                    points_value_rupees TEXT NOT NULL,
-                    net_cost TEXT NOT NULL,
-                    cap_remaining_after TEXT NOT NULL,
-                    explanation TEXT NOT NULL,
-                    card_rank INTEGER,
-                    FOREIGN KEY (recommendation_id) REFERENCES recommendations(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS decisions (
-                    recommendation_id TEXT PRIMARY KEY,
-                    accepted INTEGER NOT NULL,
-                    selected_option_id TEXT,
-                    selected_card_id TEXT,
-                    selected_vendor_id TEXT,
-                    decline_reason TEXT,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (recommendation_id) REFERENCES recommendations(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS transactions (
-                    id TEXT PRIMARY KEY,
-                    recommendation_id TEXT NOT NULL,
-                    employee_id TEXT,
-                    travel_type TEXT NOT NULL,
-                    card_id TEXT NOT NULL,
-                    vendor_id TEXT NOT NULL,
-                    final_amount_paid TEXT NOT NULL,
-                    discount_rate TEXT NOT NULL,
-                    base_points TEXT NOT NULL,
-                    bonus_points TEXT NOT NULL,
-                    total_points TEXT NOT NULL,
-                    points_value_rupees TEXT NOT NULL,
-                    net_cost TEXT NOT NULL,
-                    paid_at TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (recommendation_id) REFERENCES recommendations(id)
-                );
-                """
-            )
+            self._run_schema(connection)
+            self._ensure_column(connection, "transactions", "details_json", "TEXT NOT NULL DEFAULT '{}'")
 
     @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
+    def _connect(self) -> Iterator[Any]:
+        if self.database_url:
+            try:
+                import psycopg
+                from psycopg.rows import dict_row
+            except ImportError as exc:
+                raise RuntimeError(
+                    "psycopg is required when DATABASE_URL is set. Install backend/requirements.txt."
+                ) from exc
+
+            connection = psycopg.connect(self.database_url, row_factory=dict_row)
+        else:
+            connection = sqlite3.connect(self.db_path)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+
         try:
             yield connection
             connection.commit()
         finally:
             connection.close()
+
+    def _sql(self, sql: str) -> str:
+        if self.database_url:
+            return sql.replace("?", "%s")
+        return sql
+
+    def _upsert_recommendation_sql(self) -> str:
+        if self.database_url:
+            return """
+                INSERT INTO recommendations (
+                    id, employee_id, travel_type, quotes_json, created_at
+                ) VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    employee_id = EXCLUDED.employee_id,
+                    travel_type = EXCLUDED.travel_type,
+                    quotes_json = EXCLUDED.quotes_json,
+                    created_at = EXCLUDED.created_at
+                """
+        return """
+            INSERT OR REPLACE INTO recommendations (
+                id, employee_id, travel_type, quotes_json, created_at
+            ) VALUES (?, ?, ?, ?, ?)
+            """
+
+    def _upsert_decision_sql(self) -> str:
+        if self.database_url:
+            return """
+                INSERT INTO decisions (
+                    recommendation_id, accepted, selected_option_id, selected_card_id,
+                    selected_vendor_id, decline_reason, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (recommendation_id) DO UPDATE SET
+                    accepted = EXCLUDED.accepted,
+                    selected_option_id = EXCLUDED.selected_option_id,
+                    selected_card_id = EXCLUDED.selected_card_id,
+                    selected_vendor_id = EXCLUDED.selected_vendor_id,
+                    decline_reason = EXCLUDED.decline_reason,
+                    created_at = EXCLUDED.created_at
+                """
+        return """
+            INSERT OR REPLACE INTO decisions (
+                recommendation_id, accepted, selected_option_id, selected_card_id,
+                selected_vendor_id, decline_reason, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """
+
+    def _run_schema(self, connection: Any) -> None:
+        statements = [
+            """
+            CREATE TABLE IF NOT EXISTS recommendations (
+                id TEXT PRIMARY KEY,
+                employee_id TEXT,
+                travel_type TEXT NOT NULL,
+                quotes_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS recommendation_options (
+                id TEXT PRIMARY KEY,
+                recommendation_id TEXT NOT NULL,
+                rank INTEGER NOT NULL,
+                card_id TEXT NOT NULL,
+                card_name TEXT NOT NULL,
+                vendor_id TEXT NOT NULL,
+                vendor_name TEXT NOT NULL,
+                travel_type TEXT NOT NULL,
+                listed_amount TEXT NOT NULL,
+                eligible_amount TEXT NOT NULL,
+                cash_component TEXT NOT NULL,
+                discount_rate TEXT NOT NULL,
+                price_after_discount TEXT NOT NULL,
+                base_points TEXT NOT NULL,
+                raw_bonus_points TEXT NOT NULL,
+                awarded_bonus_points TEXT NOT NULL,
+                capped_bonus_points TEXT NOT NULL,
+                total_points TEXT NOT NULL,
+                points_value_rupees TEXT NOT NULL,
+                net_cost TEXT NOT NULL,
+                cap_remaining_after TEXT NOT NULL,
+                explanation TEXT NOT NULL,
+                card_rank INTEGER,
+                FOREIGN KEY (recommendation_id) REFERENCES recommendations(id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS decisions (
+                recommendation_id TEXT PRIMARY KEY,
+                accepted INTEGER NOT NULL,
+                selected_option_id TEXT,
+                selected_card_id TEXT,
+                selected_vendor_id TEXT,
+                decline_reason TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (recommendation_id) REFERENCES recommendations(id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS transactions (
+                id TEXT PRIMARY KEY,
+                recommendation_id TEXT NOT NULL,
+                employee_id TEXT,
+                travel_type TEXT NOT NULL,
+                card_id TEXT NOT NULL,
+                vendor_id TEXT NOT NULL,
+                final_amount_paid TEXT NOT NULL,
+                discount_rate TEXT NOT NULL,
+                base_points TEXT NOT NULL,
+                bonus_points TEXT NOT NULL,
+                total_points TEXT NOT NULL,
+                points_value_rupees TEXT NOT NULL,
+                net_cost TEXT NOT NULL,
+                paid_at TEXT NOT NULL,
+                details_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (recommendation_id) REFERENCES recommendations(id)
+            )
+            """,
+        ]
+        for statement in statements:
+            connection.execute(statement)
 
     def _quote_to_json(self, quote: QuoteInput) -> dict[str, Any]:
         return {
@@ -286,6 +369,29 @@ class AuditLedger:
             "description": quote.description,
             "discount_rate": str(quote.discount_rate),
         }
+
+    def _ensure_column(
+        self,
+        connection: sqlite3.Connection,
+        table_name: str,
+        column_name: str,
+        definition: str,
+    ) -> None:
+        columns = {
+            row["column_name"] if self.database_url else row["name"]
+            for row in connection.execute(
+                self._sql(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = ?
+                    """
+                ) if self.database_url else f"PRAGMA table_info({table_name})",
+                (table_name,) if self.database_url else (),
+            ).fetchall()
+        }
+        if column_name not in columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
     def _option_row(
         self,
@@ -351,4 +457,7 @@ class AuditLedger:
         )
 
     def _dict(self, row: sqlite3.Row) -> dict[str, Any]:
-        return dict(row)
+        value = dict(row)
+        if "details_json" in value:
+            value["details"] = json.loads(value["details_json"] or "{}")
+        return value

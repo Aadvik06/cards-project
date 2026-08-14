@@ -27,4 +27,8 @@ def create_app():
     def index() -> FileResponse:
         return FileResponse(static_dir / "index.html")
 
+    @app.get("/health", include_in_schema=False)
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
     return app

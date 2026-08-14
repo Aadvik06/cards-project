@@ -9,12 +9,15 @@ This backend does not use machine learning. It uses explicit math rules taken fr
 - Backend and simple web frontend.
 - Ranks all eligible card/vendor options from best to worst.
 - Also returns a best-to-worst card ranking so employees can choose based on qualitative factors.
+- Lets employees view past transactions and monthly/year-to-date point totals.
+- Lets employees save a local draft and cancel the current booking flow.
+- Separates flights, hotels, and non-travel Amex voucher tracking.
 - Records whether the employee accepted or declined the recommendation.
 - Requires a reason when the employee declines.
 - Does not write transaction history when a recommendation is generated.
 - Does not write transaction history when a decision is recorded.
 - Writes the monthly audit transaction log only after the employee submits the final amount paid.
-- Stores recommendations, decisions, and finalized transactions in a local SQLite database.
+- Stores recommendations, decisions, and finalized transactions in SQLite locally or PostgreSQL in production.
 - Uses finalized historical transactions from the database to reduce future daily/monthly/statement-cycle cap availability.
 
 ## Project Structure
@@ -31,7 +34,7 @@ backend/
       errors.py                 # Domain exceptions
     data/
       repositories/
-        audit_ledger.py         # SQLite recommendation, decision, and transaction storage
+        audit_ledger.py         # SQLite/PostgreSQL recommendation, decision, and transaction storage
         rules_repository.py     # Loads seed rules
       seed/
         cards.json              # Card rates, caps, point values
@@ -60,6 +63,7 @@ backend/
   tests/
     test_recommendation_engine.py
   requirements.txt
+render.yaml                     # Render deployment blueprint
 ```
 
 ## Recommendation Math
@@ -88,12 +92,14 @@ Ranking order:
 
 The web page guides the employee through four steps:
 
-1. Choose flight or hotel.
-2. Enter prices for the vendors they checked.
+1. Choose flight, hotel, or voucher.
+2. Enter booking details and prices.
 3. Review the ranked card options and choose one.
 4. Enter the final amount paid at checkout.
 
-The transaction is only logged after step 4.
+The transaction is only logged after step 4. Voucher purchases use the same final logging step, but they skip card optimization because the purpose is only to track Amex points and cap usage.
+
+Employees can also open the Past transactions tab to see logged transactions, current-month points, current-month bonus points, year-to-date points, and year-to-date spend.
 
 ## API Flow
 
@@ -180,13 +186,18 @@ GET /logs/monthly/2026/8
 
 ## Database
 
-The backend uses SQLite through Python's built-in `sqlite3` library. There is no separate database server to install.
+The backend supports two database modes:
+
+- Local development: SQLite.
+- Hosted production: PostgreSQL through `DATABASE_URL`.
 
 By default, runtime data is stored here:
 
 ```text
 backend/data/runtime/cards_project.sqlite3
 ```
+
+If `DATABASE_URL` is set, the app uses PostgreSQL instead. This is the recommended setup for private company hosting because it is better for backups, deployments, and multi-user usage.
 
 The database stores:
 
@@ -198,6 +209,92 @@ The database stores:
 - calculated points and net cost for audit review
 
 Card and vendor rules are still kept in JSON seed files because they are simple configuration data right now.
+
+## Private Hosting
+
+Recommended production setup:
+
+```text
+Cloudflare Access
+  -> Render Web Service
+  -> Render PostgreSQL
+```
+
+This keeps the app available through a real URL while requiring approved users to sign in before they can open it.
+
+### 1. Push The Repo To GitHub
+
+Render deploys from GitHub. Push the latest repository code before deploying.
+
+### 2. Create The Render Services
+
+This repo includes `render.yaml`, so Render can create both services from a blueprint:
+
+- `precisehub`: FastAPI web service.
+- `precisehub-db`: managed PostgreSQL database.
+
+In Render:
+
+1. Create a new Blueprint.
+2. Select this GitHub repository.
+3. Let Render read `render.yaml`.
+4. Create the services.
+
+The web service uses:
+
+```bash
+pip install -r requirements.txt
+```
+
+Start command:
+
+```bash
+uvicorn app.main:create_app --factory --host 0.0.0.0 --port $PORT
+```
+
+Health check:
+
+```text
+/health
+```
+
+The `DATABASE_URL` environment variable is automatically connected to the managed PostgreSQL database by the blueprint.
+
+### 3. Protect The Site With Cloudflare Access
+
+After Render gives the app a URL, protect it before sharing it with employees.
+
+In Cloudflare Zero Trust:
+
+1. Go to Access controls.
+2. Create an application.
+3. Choose a self-hosted application.
+4. Add the PreciseHub hostname, for example:
+
+```text
+precisehub.precisebiopharma.com
+```
+
+5. Add an allow policy for company users, for example:
+
+```text
+email domain equals precisebiopharma.com
+```
+
+6. Connect the hostname to the Render service.
+
+Do not leave PreciseHub publicly open. It contains employee names, trip details, card choices, points, and transaction history.
+
+### 4. Production Checklist
+
+Before company use:
+
+- Confirm HTTPS works.
+- Confirm Cloudflare Access blocks non-company users.
+- Confirm a test transaction saves into PostgreSQL.
+- Confirm monthly history loads.
+- Confirm backups are enabled for PostgreSQL.
+- Keep the Render and Cloudflare admin access limited to trusted owners.
 
 ## Run Locally
 

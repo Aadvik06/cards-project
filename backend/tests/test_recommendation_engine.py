@@ -111,6 +111,7 @@ class RecommendationEngineTests(unittest.TestCase):
             selected_option_id=selected.id,
             final_amount_paid=Decimal("10999"),
             paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            details={"description": "Final checkout amount changed slightly."},
         )
 
         self.assertEqual(Decimal("10999.00"), transaction.final_amount_paid)
@@ -129,6 +130,7 @@ class RecommendationEngineTests(unittest.TestCase):
             selected_option_id=first_option.id,
             final_amount_paid=Decimal("100000"),
             paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            details={"description": "Large hotel booking to consume monthly cap."},
         )
 
         second = self.recommendations.create_recommendation(
@@ -161,10 +163,37 @@ class RecommendationEngineTests(unittest.TestCase):
             recommendation_id=recommendation.id,
             final_amount_paid=Decimal("10899"),
             paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            details={"description": "Finalize after service restart."},
         )
 
         self.assertEqual(recommendation.id, transaction.recommendation_id)
         self.assertEqual(1, len(restarted_service.ledger.read_transactions()))
+
+    def test_voucher_purchase_logs_amex_points_without_recommendation(self) -> None:
+        transaction = self.transactions.log_voucher_purchase(
+            employee_name="Ava Patel",
+            vendor_name="Office Supply Voucher",
+            final_amount_paid=Decimal("10000"),
+            paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            description="Occasional non-travel voucher purchase.",
+        )
+
+        self.assertEqual("voucher", transaction.travel_type)
+        self.assertEqual("amex", transaction.card_id)
+        self.assertEqual(Decimal("3000.0000"), transaction.total_points)
+        self.assertEqual(1, len(self.ledger.read_transactions()))
+
+    def test_transaction_can_be_deleted(self) -> None:
+        transaction = self.transactions.log_voucher_purchase(
+            employee_name="Ava Patel",
+            vendor_name="Office Supply Voucher",
+            final_amount_paid=Decimal("1000"),
+            paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            description="Delete test voucher.",
+        )
+
+        self.assertTrue(self.ledger.delete_transaction(transaction.id))
+        self.assertEqual(0, len(self.ledger.read_transactions()))
 
 
 if __name__ == "__main__":

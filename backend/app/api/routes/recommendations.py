@@ -13,6 +13,7 @@ from app.schemas.recommendation import (
     RecommendationCreateRequest,
     RecommendationResponse,
     TransactionResponse,
+    VoucherLogRequest,
 )
 
 
@@ -23,7 +24,7 @@ router = APIRouter()
 def create_recommendation(payload: RecommendationCreateRequest) -> RecommendationResponse:
     try:
         recommendation = get_recommendation_service().create_recommendation(
-            employee_id=payload.employee_id,
+            employee_id=payload.employee_name or payload.employee_id,
             travel_type=payload.travel_type,
             travel_date=payload.travel_date,
             quotes=[quote.to_domain() for quote in payload.quotes],
@@ -53,6 +54,8 @@ def record_decision(recommendation_id: str, payload: DecisionRequest) -> Decisio
 def finalize_transaction(
     recommendation_id: str, payload: FinalizeTransactionRequest
 ) -> TransactionResponse:
+    if not payload.details.get("description", "").strip():
+        raise HTTPException(status_code=400, detail="Description is required before final logging.")
     try:
         transaction = get_transaction_service().finalize_transaction(
             recommendation_id=recommendation_id,
@@ -61,10 +64,46 @@ def finalize_transaction(
             selected_card_id=payload.selected_card_id,
             selected_vendor_id=payload.selected_vendor_id,
             paid_at=payload.paid_at,
+            details=payload.details,
         )
         return TransactionResponse.from_domain(transaction)
     except OptimizerError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/vouchers", response_model=TransactionResponse)
+def log_voucher_purchase(payload: VoucherLogRequest) -> TransactionResponse:
+    if not payload.description.strip():
+        raise HTTPException(status_code=400, detail="Description is required for voucher logging.")
+    try:
+        transaction = get_transaction_service().log_voucher_purchase(
+            employee_name=payload.employee_name,
+            vendor_name=payload.vendor_name,
+            final_amount_paid=payload.final_amount_paid,
+            paid_at=payload.paid_at,
+            description=payload.description,
+        )
+        return TransactionResponse.from_domain(transaction)
+    except OptimizerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/transactions")
+def get_transactions() -> list[dict]:
+    return get_monthly_log_service().get_all_transactions()
+
+
+@router.delete("/transactions/{transaction_id}")
+def delete_transaction(transaction_id: str) -> dict:
+    deleted = get_monthly_log_service().delete_transaction(transaction_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Transaction not found.")
+    return {"deleted": True, "transaction_id": transaction_id}
+
+
+@router.get("/logs/summary")
+def get_points_summary() -> dict:
+    return get_monthly_log_service().get_summary()
 
 
 @router.get("/logs/monthly/{year}/{month}")
@@ -72,4 +111,3 @@ def get_monthly_log(year: int, month: int) -> dict:
     if month < 1 or month > 12:
         raise HTTPException(status_code=400, detail="Month must be between 1 and 12.")
     return get_monthly_log_service().get_month(year, month)
-

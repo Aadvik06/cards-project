@@ -3,147 +3,215 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Cards Project</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <title>PreciseHub</title>
+    <link rel="stylesheet" href="/static/styles.css?v=20260813-font-light" />
   </head>
   <body>
     <header class="topbar">
-      <div>
-        <p class="eyebrow">Travel booking</p>
-        <h1>Choose the best card</h1>
+      <div class="brand-lockup">
+        <img src="/static/assets/precise-logo-transparent.png" alt="Precise Biopharma Pvt. Ltd." />
+        <div>
+          <p class="eyebrow">Travel booking</p>
+          <h1 class="portal-title">PreciseHub</h1>
+        </div>
       </div>
-      <div class="status-pill" id="saveStatus">Ready</div>
+      <div class="top-actions">
+        <button class="tab-button is-active" id="bookingTab" type="button">Booking</button>
+        <button class="tab-button" id="transactionsTab" type="button">Past transactions</button>
+        <div class="status-pill" id="saveStatus">Ready</div>
+      </div>
     </header>
 
     <main class="shell">
-      <nav class="steps" aria-label="Booking steps">
-        <div class="step is-active" data-step="1">
-          <span>1</span>
-          <strong>Trip type</strong>
-        </div>
-        <div class="step" data-step="2">
-          <span>2</span>
-          <strong>Prices</strong>
-        </div>
-        <div class="step" data-step="3">
-          <span>3</span>
-          <strong>Card choice</strong>
-        </div>
-        <div class="step" data-step="4">
-          <span>4</span>
-          <strong>Final amount</strong>
-        </div>
-      </nav>
-
-      <section class="panel" id="stepTrip">
-        <div class="section-head">
-          <p class="eyebrow">Step 1</p>
-          <h2>What are you booking?</h2>
-        </div>
-
-        <div class="choice-grid">
-          <button class="choice-card" data-travel-type="flight" type="button">
-            <span class="choice-icon">Flight</span>
-            <strong>Flight</strong>
-            <small>Compare flight vendors and card rewards.</small>
+      <section id="bookingView">
+        <nav class="steps" aria-label="Booking steps">
+          <button class="step is-active" data-step-target="trip" type="button">
+            <span>1</span>
+            <strong>Type</strong>
           </button>
-          <button class="choice-card" data-travel-type="hotel" type="button">
-            <span class="choice-icon">Hotel</span>
-            <strong>Hotel</strong>
-            <small>Compare hotel vendors and card rewards.</small>
+          <button class="step" data-step-target="prices" type="button">
+            <span>2</span>
+            <strong>Details</strong>
           </button>
-        </div>
-      </section>
+          <button class="step" data-step-target="recommendation" type="button">
+            <span>3</span>
+            <strong>Choice</strong>
+          </button>
+          <button class="step" data-step-target="finalize" type="button">
+            <span>4</span>
+            <strong>Final</strong>
+          </button>
+        </nav>
 
-      <section class="panel is-hidden" id="stepPrices">
-        <div class="section-head">
-          <p class="eyebrow">Step 2</p>
-          <h2 id="priceTitle">Enter prices</h2>
-        </div>
-
-        <form id="quoteForm">
-          <div class="form-grid">
-            <label>
-              Employee ID
-              <input id="employeeId" name="employeeId" autocomplete="off" placeholder="Optional" />
-            </label>
-            <label>
-              Travel date
-              <input id="travelDate" name="travelDate" type="date" />
-            </label>
+        <section class="panel" id="stepTrip">
+          <div class="section-head">
+            <p class="eyebrow">Step 1</p>
+            <h2>What are you booking?</h2>
           </div>
 
-          <div class="vendor-list" id="vendorList"></div>
+          <div class="card-gallery" aria-label="Company cards">
+            <article>
+              <img src="/static/assets/american-express.webp" alt="American Express card" />
+              <strong>American Express</strong>
+            </article>
+            <article>
+              <img src="/static/assets/hdfc-infinia.webp" alt="HDFC Infinia card" />
+              <strong>HDFC Infinia</strong>
+            </article>
+            <article>
+              <img src="/static/assets/icici-times-black.webp" alt="ICICI Times Black card" />
+              <strong>ICICI Times Black</strong>
+            </article>
+          </div>
 
+          <div class="choice-grid three">
+            <button class="choice-card" data-travel-type="flight" type="button">
+              <span class="choice-icon">Flight</span>
+              <strong>Flight</strong>
+              <small>Compare flight vendors and card rewards.</small>
+            </button>
+            <button class="choice-card" data-travel-type="hotel" type="button">
+              <span class="choice-icon">Hotel</span>
+              <strong>Hotel</strong>
+              <small>Compare hotel vendors and card rewards.</small>
+            </button>
+            <button class="choice-card" data-travel-type="voucher" type="button">
+              <span class="choice-icon">Voucher</span>
+              <strong>Voucher</strong>
+              <small>Track Amex voucher points without optimization.</small>
+            </button>
+          </div>
           <div class="actions">
-            <button class="secondary" id="backToTrip" type="button">Back</button>
-            <button class="primary" type="submit">Show card ranking</button>
+            <button class="secondary" id="loadDraft" type="button">Load saved draft</button>
           </div>
-        </form>
-      </section>
+        </section>
 
-      <section class="panel is-hidden" id="stepRecommendation">
-        <div class="section-head">
-          <p class="eyebrow">Step 3</p>
-          <h2>Recommended card</h2>
-        </div>
-
-        <div id="bestOption"></div>
-        <div class="rank-list" id="rankList"></div>
-
-        <div class="decline-box is-hidden" id="declineBox">
-          <label>
-            Reason for choosing a different card
-            <textarea id="declineReason" rows="3" placeholder="Example: employee preference, booking issue, vendor unavailable"></textarea>
-          </label>
-          <div class="actions">
-            <button class="secondary" id="cancelDecline" type="button">Cancel</button>
-            <button class="primary" id="confirmDecline" type="button">Continue</button>
+        <section class="panel is-hidden" id="stepPrices">
+          <div class="section-head">
+            <p class="eyebrow">Step 2</p>
+            <h2 id="priceTitle">Enter details</h2>
           </div>
-        </div>
-      </section>
 
-      <section class="panel is-hidden" id="stepFinalize">
-        <div class="section-head">
-          <p class="eyebrow">Step 4</p>
-          <h2>Final checkout amount</h2>
-        </div>
+          <form id="quoteForm">
+            <div class="form-grid">
+              <label>
+                Employee name
+                <input id="employeeName" autocomplete="name" placeholder="Example: Asha Mehta" />
+              </label>
+              <label>
+                Booking for
+                <input id="bookingFor" autocomplete="name" placeholder="Example: Rahul Shah" />
+              </label>
+              <label>
+                Booking date
+                <input id="travelDate" type="date" />
+              </label>
+            </div>
 
-        <div class="summary-strip" id="selectedSummary"></div>
+            <div class="form-grid" id="tripDetails"></div>
+            <p class="helper-text" id="zeroHint">Leave a platform blank or enter 0 to skip it.</p>
+            <div class="vendor-list" id="vendorList"></div>
 
-        <form id="finalForm">
-          <div class="form-grid">
+            <div class="actions split">
+              <button class="danger-button" data-cancel-flow type="button">Cancel</button>
+              <div>
+                <button class="secondary" id="backToTrip" type="button">Back</button>
+                <button class="secondary" data-save-draft type="button">Save draft</button>
+                <button class="primary" type="submit">Continue</button>
+              </div>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel is-hidden" id="stepRecommendation">
+          <div class="section-head">
+            <p class="eyebrow">Step 3</p>
+            <h2 id="recommendationTitle">Recommended card</h2>
+          </div>
+
+          <div id="bestOption"></div>
+          <div class="rank-list" id="rankList"></div>
+
+          <div class="decline-box is-hidden" id="declineBox">
             <label>
-              Final amount paid
-              <input id="finalAmount" type="number" min="1" step="0.01" required />
+              Reason for choosing a different card
+              <textarea id="declineReason" rows="3" placeholder="Example: employee preference, booking issue, vendor unavailable"></textarea>
             </label>
-            <label>
-              Paid at
-              <input id="paidAt" type="datetime-local" />
-            </label>
+            <div class="actions">
+              <button class="secondary" id="cancelDecline" type="button">Cancel</button>
+              <button class="primary" id="confirmDecline" type="button">Continue</button>
+            </div>
           </div>
 
-          <div class="actions">
-            <button class="primary" type="submit">Save transaction</button>
+          <div class="actions split">
+            <button class="danger-button" data-cancel-flow type="button">Cancel</button>
+            <div>
+              <button class="secondary" data-step-back="prices" type="button">Back</button>
+              <button class="secondary" data-save-draft type="button">Save draft</button>
+            </div>
           </div>
-        </form>
+        </section>
+
+        <section class="panel is-hidden" id="stepFinalize">
+          <div class="section-head">
+            <p class="eyebrow">Step 4</p>
+            <h2>Final checkout amount</h2>
+          </div>
+
+          <div class="summary-strip" id="selectedSummary"></div>
+
+          <form id="finalForm">
+            <div class="form-grid">
+              <label>
+                Final amount paid
+                <input id="finalAmount" type="number" min="1" step="0.01" required />
+              </label>
+              <label>
+                Paid at
+                <input id="paidAt" type="datetime-local" />
+              </label>
+            </div>
+            <label>
+              Description
+              <textarea id="finalDescription" rows="4" required placeholder="Write what was booked and any checkout changes."></textarea>
+            </label>
+
+            <div class="actions split">
+              <button class="danger-button" data-cancel-flow type="button">Cancel</button>
+              <div>
+                <button class="secondary" data-step-back="recommendation" type="button">Back</button>
+                <button class="secondary" data-save-draft type="button">Save draft</button>
+                <button class="primary" type="submit">Save transaction</button>
+              </div>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel success-panel is-hidden" id="donePanel">
+          <div class="section-head">
+            <p class="eyebrow">Saved</p>
+            <h2>Transaction logged</h2>
+          </div>
+          <div id="savedDetails"></div>
+          <div class="actions">
+            <button class="primary" id="startOver" type="button">Start another booking</button>
+          </div>
+        </section>
       </section>
 
-      <section class="panel success-panel is-hidden" id="donePanel">
+      <section class="panel is-hidden" id="transactionsView">
         <div class="section-head">
-          <p class="eyebrow">Saved</p>
-          <h2>Transaction logged</h2>
+          <p class="eyebrow">History</p>
+          <h2>Past transactions by month</h2>
         </div>
-        <div id="savedDetails"></div>
-        <div class="actions">
-          <button class="primary" id="startOver" type="button">Start another booking</button>
-        </div>
+        <div class="metric-grid" id="summaryCards"></div>
+        <div class="card-split-grid" id="cardSplit"></div>
+        <div class="transaction-list" id="transactionList"></div>
       </section>
     </main>
 
     <div class="toast is-hidden" id="toast"></div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260813-font-light"></script>
   </body>
 </html>
-

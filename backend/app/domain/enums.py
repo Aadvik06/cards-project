@@ -4,6 +4,7 @@ from enum import StrEnum
 class TravelType(StrEnum):
     FLIGHT = "flight"
     HOTEL = "hotel"
+    VOUCHER = "voucher"
 
 
 class RefreshType(StrEnum):
@@ -15,4 +16,3 @@ class PurchaseForm(StrEnum):
     VOUCHER = "voucher"
     PORTAL = "portal"
     CONCIERGE = "concierge"
-

@@ -20,7 +20,9 @@ class CreditCard:
     hotel_multiplier: Decimal
 
     def multiplier_for(self, travel_type: TravelType) -> Decimal:
-        return self.flight_multiplier if travel_type == TravelType.FLIGHT else self.hotel_multiplier
+        if travel_type == TravelType.FLIGHT:
+            return self.flight_multiplier
+        return self.hotel_multiplier
 
 
 @dataclass(frozen=True)
@@ -143,5 +145,5 @@ class TransactionRecord:
     points_value_rupees: Decimal
     net_cost: Decimal
     paid_at: datetime
+    details: dict[str, str] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-

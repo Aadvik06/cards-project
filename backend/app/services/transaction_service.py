@@ -2,8 +2,11 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
+from app.core.decimal_math import money, points
 from app.core.errors import InvalidDecisionError
-from app.domain.models import QuoteInput, TransactionRecord
+from app.domain.cap_tracker import remaining_bonus_cap
+from app.domain.enums import TravelType
+from app.domain.models import QuoteInput, Recommendation, TransactionRecord, UsageSnapshot
 from app.services.recommendation_service import RecommendationService
 
 
@@ -20,6 +23,7 @@ class TransactionService:
         selected_card_id: str | None = None,
         selected_vendor_id: str | None = None,
         paid_at: datetime | None = None,
+        details: dict[str, str] | None = None,
     ) -> TransactionRecord:
         recommendation = self.recommendation_service.get_recommendation(recommendation_id)
 
@@ -90,7 +94,68 @@ class TransactionService:
             points_value_rupees=final_option.points_value_rupees,
             net_cost=final_option.net_cost,
             paid_at=paid_at,
+            details=details or {},
         )
         self.recommendation_service.ledger.append_transaction(transaction)
         return transaction
 
+    def log_voucher_purchase(
+        self,
+        *,
+        employee_name: str | None,
+        vendor_name: str,
+        final_amount_paid: Decimal,
+        paid_at: datetime | None = None,
+        description: str,
+    ) -> TransactionRecord:
+        paid_at = paid_at or datetime.now(UTC)
+        amex = next(card for card in self.recommendation_service.cards if card.id == "amex")
+        usage = self.recommendation_service.cap_usage.usage_for(paid_at.date()).get(
+            amex.id,
+            UsageSnapshot(),
+        )
+        base_points = final_amount_paid * amex.base_rate
+        raw_bonus_points = (base_points * amex.hotel_multiplier) - base_points
+        awarded_bonus_points = min(raw_bonus_points, remaining_bonus_cap(amex, usage))
+        total_points = base_points + awarded_bonus_points
+        points_value_rupees = total_points * amex.point_value_rupees
+        voucher_id = f"voucher-{uuid4()}"
+
+        self.recommendation_service.ledger.save_recommendation(
+            Recommendation(
+                id=voucher_id,
+                employee_id=employee_name,
+                travel_type=TravelType.VOUCHER,
+                quotes=[
+                    QuoteInput(
+                        vendor_id="amex_other_voucher",
+                        amount=final_amount_paid,
+                        merchant_name=vendor_name,
+                        description=description,
+                    )
+                ],
+                ranked_options=[],
+                card_rankings=[],
+                created_at=paid_at,
+            )
+        )
+
+        transaction = TransactionRecord(
+            id=str(uuid4()),
+            recommendation_id=voucher_id,
+            employee_id=employee_name,
+            travel_type=TravelType.VOUCHER,
+            card_id="amex",
+            vendor_id="amex_other_voucher",
+            discount_rate=Decimal("0"),
+            final_amount_paid=money(final_amount_paid),
+            base_points=points(base_points),
+            bonus_points=points(awarded_bonus_points),
+            total_points=points(total_points),
+            points_value_rupees=money(points_value_rupees),
+            net_cost=money(final_amount_paid - points_value_rupees),
+            paid_at=paid_at,
+            details={"vendor_name": vendor_name, "description": description},
+        )
+        self.recommendation_service.ledger.append_transaction(transaction)
+        return transaction
