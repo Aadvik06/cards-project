@@ -231,8 +231,8 @@ Render deploys from GitHub. Push the latest repository code before deploying.
 
 This repo includes `render.yaml`, so Render can create both services from a blueprint:
 
-- `precisehub`: FastAPI web service.
-- `precisehub-db`: managed PostgreSQL database.
+- `precisehub`: FastAPI web service on the `starter` plan.
+- `precisehub-db`: managed PostgreSQL database on the `basic-256mb` plan.
 
 In Render:
 
@@ -260,6 +260,16 @@ Health check:
 ```
 
 The `DATABASE_URL` environment variable is automatically connected to the managed PostgreSQL database by the blueprint.
+
+Expected starting cost for this Render setup is about `$13/month` before any unusual bandwidth or storage growth:
+
+```text
+Starter web service       about $7/month
+Basic-256mb PostgreSQL    about $6/month
+Cloudflare Access         $0/month for 5 users
+```
+
+If you only want to test deployment, you can select free instances manually, but do not use free Postgres for real data because it expires after 30 days.
 
 ### 3. Protect The Site With Cloudflare Access
 
