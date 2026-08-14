@@ -64,6 +64,7 @@ backend/
     test_recommendation_engine.py
   requirements.txt
 render.yaml                     # Render deployment blueprint
+catalyst.json                   # Zoho Catalyst AppSail project config
 ```
 
 ## Recommendation Math
@@ -212,7 +213,7 @@ Card and vendor rules are still kept in JSON seed files because they are simple 
 
 ## Private Hosting
 
-Recommended production setup:
+Recommended production setup if using Render:
 
 ```text
 Cloudflare Access
@@ -295,6 +296,96 @@ Before company use:
 - Confirm monthly history loads.
 - Confirm backups are enabled for PostgreSQL.
 - Keep the Render and Cloudflare admin access limited to trusted owners.
+
+## Zoho Catalyst Hosting
+
+Zoho Catalyst is a legitimate Zoho cloud platform. Its AppSail product supports Python web applications and lets apps read the assigned HTTP port from the `X_ZOHO_CATALYST_LISTEN_PORT` environment variable.
+
+This repository includes Catalyst-ready files:
+
+```text
+catalyst.json
+backend/app-config.json
+backend/start_catalyst.py
+backend/Dockerfile.catalyst
+```
+
+### Recommended Catalyst Approach
+
+Use Catalyst AppSail for the web app, but do not rely on local SQLite for production audit data. For production, set `DATABASE_URL` to a hosted PostgreSQL database connection string.
+
+```text
+Zoho Catalyst AppSail
+  -> PreciseHub FastAPI app
+  -> PostgreSQL through DATABASE_URL
+```
+
+If you want all data fully inside Zoho Catalyst later, the database layer should be adapted to Catalyst Data Store. The current production-ready path is PostgreSQL because the app already supports it.
+
+### Deploy With Catalyst Managed Python Runtime
+
+1. Create a Zoho Catalyst project in the Catalyst console.
+2. Install the Catalyst CLI:
+
+```bash
+npm install -g zcatalyst-cli@latest
+```
+
+3. Log in:
+
+```bash
+catalyst login
+```
+
+4. From the repository root, link the local project to your Catalyst project:
+
+```bash
+catalyst init
+```
+
+When prompted, select your existing Catalyst project. The repo already includes `catalyst.json`, but the CLI may update it with your account-specific project settings.
+
+5. Confirm the AppSail service points to:
+
+```text
+backend
+```
+
+6. In Catalyst AppSail environment variables, set:
+
+```text
+DATABASE_URL=your_postgresql_connection_string
+```
+
+7. Deploy to Catalyst development:
+
+```bash
+catalyst deploy
+```
+
+8. Test the development URL.
+
+9. Promote/deploy to production from the Catalyst console when ready.
+
+### Catalyst Startup Command
+
+The AppSail startup command is:
+
+```bash
+python3 -u start_catalyst.py
+```
+
+`start_catalyst.py` starts Uvicorn on the port Catalyst provides.
+
+### Catalyst Docker Fallback
+
+If the managed Python runtime does not install dependencies the way you need, use the Docker/custom runtime path with:
+
+```text
+backend/Dockerfile.catalyst
+```
+
+The Docker option is often cleaner for FastAPI because the image installs `requirements.txt` during the build.
 
 ## Run Locally
 
