@@ -4,9 +4,45 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PreciseHub</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260815-full-logo" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260815-supabase-auth" />
   </head>
-  <body>
+  <body class="auth-pending">
+    <section class="auth-screen is-hidden" id="authGate">
+      <div class="auth-card">
+        <div class="auth-logos">
+          <img class="auth-portal-logo" src="/static/assets/precisehub-logo.png" alt="PreciseHub" />
+          <img class="auth-company-logo" src="/static/assets/precise-logo-transparent.png" alt="Precise Biopharma Pvt. Ltd." />
+        </div>
+
+        <form id="loginForm">
+          <label>
+            Email
+            <input id="authEmail" autocomplete="email" type="email" required />
+          </label>
+          <label>
+            Password
+            <input id="authPassword" autocomplete="current-password" type="password" required />
+          </label>
+          <button class="primary" type="submit">Log in</button>
+        </form>
+
+        <form class="is-hidden" id="mfaForm">
+          <div class="mfa-setup is-hidden" id="mfaSetup">
+            <p>Scan this code in your authenticator app.</p>
+            <img id="mfaQr" alt="Authenticator QR code" />
+            <small id="mfaSecret"></small>
+          </div>
+          <label>
+            Authenticator code
+            <input id="mfaCode" autocomplete="one-time-code" inputmode="numeric" maxlength="6" required />
+          </label>
+          <button class="primary" type="submit">Verify</button>
+        </form>
+
+        <p class="auth-message" id="authMessage"></p>
+      </div>
+    </section>
+
     <header class="topbar">
       <div class="brand-lockup">
         <img src="/static/assets/precise-logo-transparent.png" alt="Precise Biopharma Pvt. Ltd." />
@@ -17,6 +53,7 @@
       <div class="top-actions">
         <button class="tab-button is-active" id="bookingTab" type="button">Booking</button>
         <button class="tab-button" id="transactionsTab" type="button">Past transactions</button>
+        <button class="secondary compact is-hidden" id="logoutButton" type="button">Logout</button>
         <div class="status-pill" id="saveStatus">Ready</div>
       </div>
     </header>
@@ -225,6 +262,7 @@
 
     <div class="toast is-hidden" id="toast"></div>
 
-    <script src="/static/app.js?v=20260815-full-logo"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/static/app.js?v=20260815-supabase-auth"></script>
   </body>
 </html>

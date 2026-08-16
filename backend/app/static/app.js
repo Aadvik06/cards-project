@@ -27,6 +27,14 @@ const state = {
   highestStep: 1,
 };
 
+const auth = {
+  enabled: false,
+  client: null,
+  session: null,
+  factorId: null,
+  challengeId: null,
+};
+
 const cardNames = {
   amex: "American Express",
   hdfc_infinia: "HDFC Infinia",
@@ -82,6 +90,202 @@ function showToast(message, isError = false) {
   toast.classList.toggle("error", isError);
   toast.classList.remove("is-hidden");
   window.setTimeout(() => toast.classList.add("is-hidden"), 3600);
+}
+
+function setAuthMessage(message, isError = false) {
+  const messageBox = $("#authMessage");
+  messageBox.textContent = message || "";
+  messageBox.classList.toggle("error", isError);
+}
+
+function setAuthRequired(required) {
+  document.body.classList.remove("auth-pending");
+  document.body.classList.toggle("auth-required", required);
+  $("#authGate").classList.toggle("is-hidden", !required);
+  $("#logoutButton").classList.toggle("is-hidden", required || !auth.enabled);
+}
+
+function decodeJwt(token) {
+  try {
+    const payload = token.split(".")[1].replaceAll("-", "+").replaceAll("_", "/");
+    return JSON.parse(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, "=")));
+  } catch {
+    return {};
+  }
+}
+
+function qrImageSource(qrCode) {
+  if (!qrCode) return "";
+  if (qrCode.startsWith("data:")) return qrCode;
+  if (qrCode.trim().startsWith("<svg")) {
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(qrCode)}`;
+  }
+  return qrCode;
+}
+
+async function setupAuth() {
+  let config;
+  try {
+    const response = await fetch("/auth/config");
+    config = await response.json();
+  } catch {
+    document.body.classList.remove("auth-pending");
+    setAuthMessage("Unable to load login settings.", true);
+    return;
+  }
+
+  auth.enabled = Boolean(config.enabled);
+  if (!auth.enabled) {
+    setAuthRequired(false);
+    return;
+  }
+
+  if (!window.supabase?.createClient) {
+    setAuthRequired(true);
+    setAuthMessage("Unable to load Supabase login library.", true);
+    return;
+  }
+
+  auth.client = window.supabase.createClient(config.supabase_url, config.supabase_anon_key);
+  setupAuthForms();
+
+  const { data } = await auth.client.auth.getSession();
+  if (data?.session) {
+    await continueAuth(data.session);
+  } else {
+    showLogin();
+  }
+}
+
+function setupAuthForms() {
+  $("#loginForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    setAuthMessage("Signing in...");
+    const email = $("#authEmail").value.trim();
+    const password = $("#authPassword").value;
+    const { data, error } = await auth.client.auth.signInWithPassword({ email, password });
+    if (error) {
+      setAuthMessage(error.message, true);
+      return;
+    }
+    await continueAuth(data.session);
+  });
+
+  $("#mfaForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const code = $("#mfaCode").value.trim();
+    if (!auth.factorId || !auth.challengeId) {
+      setAuthMessage("MFA challenge is not ready. Please log in again.", true);
+      return;
+    }
+    setAuthMessage("Verifying...");
+    const { data, error } = await auth.client.auth.mfa.verify({
+      factorId: auth.factorId,
+      challengeId: auth.challengeId,
+      code,
+    });
+    if (error) {
+      setAuthMessage(error.message, true);
+      return;
+    }
+    const session = data?.session || (await auth.client.auth.getSession()).data?.session;
+    await continueAuth(session);
+  });
+
+  $("#logoutButton").addEventListener("click", async () => {
+    await auth.client.auth.signOut();
+    auth.session = null;
+    showLogin();
+  });
+}
+
+function showLogin() {
+  $("#loginForm").classList.remove("is-hidden");
+  $("#mfaForm").classList.add("is-hidden");
+  $("#mfaSetup").classList.add("is-hidden");
+  $("#mfaCode").value = "";
+  setAuthMessage("");
+  setAuthRequired(true);
+}
+
+async function continueAuth(session) {
+  if (!session?.access_token) {
+    showLogin();
+    return;
+  }
+
+  auth.session = session;
+  const claims = decodeJwt(session.access_token);
+  if (claims.aal === "aal2") {
+    setAuthRequired(false);
+    setAuthMessage("");
+    return;
+  }
+
+  const { data, error } = await auth.client.auth.mfa.listFactors();
+  if (error) {
+    setAuthMessage(error.message, true);
+    setAuthRequired(true);
+    return;
+  }
+
+  const verifiedFactor = data?.totp?.find((factor) => factor.status === "verified");
+  if (verifiedFactor) {
+    await startMfaChallenge(verifiedFactor.id, false);
+  } else {
+    await startMfaEnrollment();
+  }
+}
+
+async function startMfaEnrollment() {
+  setAuthRequired(true);
+  $("#loginForm").classList.add("is-hidden");
+  $("#mfaForm").classList.remove("is-hidden");
+  $("#mfaSetup").classList.remove("is-hidden");
+  setAuthMessage("Set up two-factor authentication.");
+
+  const { data, error } = await auth.client.auth.mfa.enroll({
+    factorType: "totp",
+    friendlyName: "PreciseHub",
+  });
+  if (error) {
+    setAuthMessage(error.message, true);
+    return;
+  }
+
+  auth.factorId = data.id;
+  $("#mfaQr").src = qrImageSource(data.totp?.qr_code);
+  $("#mfaSecret").textContent = data.totp?.secret ? `Secret: ${data.totp.secret}` : "";
+  await startMfaChallenge(data.id, true);
+}
+
+async function startMfaChallenge(factorId, keepSetupVisible) {
+  setAuthRequired(true);
+  $("#loginForm").classList.add("is-hidden");
+  $("#mfaForm").classList.remove("is-hidden");
+  $("#mfaSetup").classList.toggle("is-hidden", !keepSetupVisible);
+  $("#mfaCode").value = "";
+  setAuthMessage(keepSetupVisible ? "Scan the QR code, then enter the 6-digit code." : "Enter your authenticator code.");
+
+  const { data, error } = await auth.client.auth.mfa.challenge({ factorId });
+  if (error) {
+    setAuthMessage(error.message, true);
+    return;
+  }
+  auth.factorId = factorId;
+  auth.challengeId = data.id;
+  $("#mfaCode").focus();
+}
+
+async function authHeaders(baseHeaders = {}) {
+  if (!auth.enabled) return baseHeaders;
+  const { data } = await auth.client.auth.getSession();
+  const token = data?.session?.access_token;
+  if (!token) throw new Error("Please log in again.");
+  return {
+    ...baseHeaders,
+    Authorization: `Bearer ${token}`,
+  };
 }
 
 function formatMoney(value) {
@@ -346,7 +550,7 @@ function collectDetails() {
 async function postJson(url, body) {
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(body),
   });
   const data = await response.json();
@@ -355,7 +559,10 @@ async function postJson(url, body) {
 }
 
 async function deleteJson(url) {
-  const response = await fetch(url, { method: "DELETE" });
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
   const data = await response.json();
   if (!response.ok) throw new Error(data.detail || "Something went wrong.");
   return data;
@@ -971,8 +1178,24 @@ function setupReports() {
   });
 }
 
-function downloadReport(url) {
-  window.open(url, "_blank");
+async function downloadReport(url) {
+  const reportWindow = window.open("", "_blank");
+  if (!reportWindow) {
+    showToast("Allow pop-ups to generate the report.", true);
+    return;
+  }
+  reportWindow.document.write("<p>Generating report...</p>");
+  try {
+    const response = await fetch(url, { headers: await authHeaders() });
+    if (!response.ok) throw new Error("Could not generate report.");
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    reportWindow.location.href = objectUrl;
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+  } catch (error) {
+    reportWindow.close();
+    showToast(error.message, true);
+  }
 }
 
 async function loadTransactions() {
@@ -983,9 +1206,10 @@ async function loadTransactions() {
 
   try {
     setStatus("Loading");
+    const headers = await authHeaders();
     const [summaryResponse, transactionsResponse] = await Promise.all([
-      fetch("/logs/summary"),
-      fetch("/transactions"),
+      fetch("/logs/summary", { headers }),
+      fetch("/transactions", { headers }),
     ]);
     const summary = await summaryResponse.json();
     const transactions = await transactionsResponse.json();
@@ -1131,3 +1355,4 @@ setupDraftLoading();
 setupStartOver();
 setupReports();
 setupChoicePdf();
+setupAuth();

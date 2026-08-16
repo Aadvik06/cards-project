@@ -256,6 +256,7 @@ This repository is ready for a free trial deployment using:
 ```text
 Vercel Python Function
   -> PreciseHub FastAPI app
+  -> Supabase Auth with TOTP MFA
   -> Supabase PostgreSQL through DATABASE_URL
 ```
 
@@ -270,18 +271,19 @@ requirements.txt
 
 ### Privacy First
 
-Do not deploy this app without setting login credentials.
+Do not deploy this app without Supabase Auth environment variables.
 
-The app uses HTTP Basic login when these environment variables are set:
+The app requires Supabase email/password login plus TOTP MFA when these variables are set:
 
 ```text
-APP_USERNAME
-APP_PASSWORD
+SUPABASE_URL
+SUPABASE_ANON_KEY
+ALLOWED_EMAILS
 ```
 
-On Vercel, if these are missing, the app locks itself and returns an error instead of exposing company data publicly.
+On Vercel, if Supabase Auth is enabled but `ALLOWED_EMAILS` is missing, protected API/report routes lock themselves instead of exposing company data.
 
-Use a long random password. Do not commit real passwords or database URLs into GitHub.
+Only emails listed in `ALLOWED_EMAILS` can use the backend APIs. Do not commit real database URLs, Supabase keys, or employee lists into GitHub.
 
 ### Supabase Setup
 
@@ -298,7 +300,21 @@ Use the connection string as:
 DATABASE_URL=postgres://...
 ```
 
-Do not use the Supabase anon key or service-role key for this backend. This app only needs the PostgreSQL connection string.
+Then configure Supabase Auth:
+
+1. Go to **Authentication > Users**.
+2. Create the 5 employee users manually.
+3. Go to **Authentication > Multi-Factor**.
+4. Confirm **TOTP / App Authenticator** is enabled.
+
+Use the Supabase project URL and anon/publishable key as:
+
+```text
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_ANON_KEY=your-anon-or-publishable-key
+```
+
+Do not use the Supabase service-role key in the browser.
 
 ### Vercel Setup
 
@@ -309,15 +325,18 @@ Do not use the Supabase anon key or service-role key for this backend. This app 
 
 ```text
 DATABASE_URL
-APP_USERNAME
-APP_PASSWORD
+SUPABASE_URL
+SUPABASE_ANON_KEY
+ALLOWED_EMAILS
 ```
 
 5. Deploy the project.
 6. Open the Vercel URL.
-7. Confirm the browser asks for a username and password.
-8. Log in and create one test transaction.
-9. Confirm Past transactions loads correctly.
+7. Confirm the app shows the PreciseHub login screen.
+8. Log in with an employee email/password.
+9. If the employee has not set up MFA, scan the QR code in an authenticator app and enter the 6-digit code.
+10. Create one test transaction.
+11. Confirm Past transactions loads correctly.
 
 Vercel environment variables are configured outside source code. Vercel documents that these values are encrypted at rest and can be scoped by environment. Supabase recommends the transaction pooler for serverless functions because serverless creates short-lived database connections.
 
