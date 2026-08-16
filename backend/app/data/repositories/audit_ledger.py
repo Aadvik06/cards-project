@@ -228,7 +228,11 @@ class AuditLedger:
                     "psycopg is required when DATABASE_URL is set. Install backend/requirements.txt."
                 ) from exc
 
-            connection = psycopg.connect(self.database_url, row_factory=dict_row)
+            connection = psycopg.connect(
+                self._postgres_url(),
+                row_factory=dict_row,
+                prepare_threshold=None,
+            )
         else:
             connection = sqlite3.connect(self.db_path)
             connection.row_factory = sqlite3.Row
@@ -244,6 +248,14 @@ class AuditLedger:
         if self.database_url:
             return sql.replace("?", "%s")
         return sql
+
+    def _postgres_url(self) -> str:
+        if not self.database_url:
+            raise RuntimeError("DATABASE_URL is not configured.")
+        if "sslmode=" in self.database_url:
+            return self.database_url
+        separator = "&" if "?" in self.database_url else "?"
+        return f"{self.database_url}{separator}sslmode=require"
 
     def _upsert_recommendation_sql(self) -> str:
         if self.database_url:

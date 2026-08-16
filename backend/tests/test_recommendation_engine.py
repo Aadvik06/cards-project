@@ -117,6 +117,35 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(Decimal("10999.00"), transaction.final_amount_paid)
         self.assertEqual(1, len(self.ledger.read_transactions()))
 
+    def test_travel_agent_option_is_comparison_only_bank_transfer(self) -> None:
+        recommendation = self.recommendations.create_recommendation(
+            employee_id="emp-agent",
+            travel_type=TravelType.FLIGHT,
+            quotes=[
+                QuoteInput("hdfc_smartbuy_flight", Decimal("10869")),
+                QuoteInput("travel_agent_flight", Decimal("9000")),
+            ],
+        )
+        selected = recommendation.ranked_options[0]
+
+        self.assertEqual("bank_transfer", selected.card_id)
+        self.assertEqual("travel_agent_flight", selected.vendor_id)
+        self.assertEqual(Decimal("9000.00"), selected.net_cost)
+        self.assertEqual(Decimal("0.0000"), selected.total_points)
+
+        transaction = self.transactions.finalize_transaction(
+            recommendation_id=recommendation.id,
+            selected_option_id=selected.id,
+            final_amount_paid=Decimal("9100"),
+            paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            details={"description": "Travel agent bank transfer."},
+        )
+
+        self.assertEqual("bank_transfer", transaction.card_id)
+        self.assertEqual(Decimal("9100.00"), transaction.final_amount_paid)
+        self.assertEqual(Decimal("0.0000"), transaction.total_points)
+        self.assertEqual(Decimal("9100.00"), transaction.net_cost)
+
     def test_finalized_history_reduces_future_available_caps(self) -> None:
         first = self.recommendations.create_recommendation(
             employee_id="emp-5",

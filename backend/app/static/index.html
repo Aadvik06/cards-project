@@ -4,15 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PreciseHub</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260813-font-light" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260815-full-logo" />
   </head>
   <body>
     <header class="topbar">
       <div class="brand-lockup">
         <img src="/static/assets/precise-logo-transparent.png" alt="Precise Biopharma Pvt. Ltd." />
-        <div>
-          <p class="eyebrow">Travel booking</p>
-          <h1 class="portal-title">PreciseHub</h1>
+        <div class="portal-logo-wrap">
+          <img class="portal-logo" src="/static/assets/precisehub-logo.png" alt="PreciseHub" />
         </div>
       </div>
       <div class="top-actions">
@@ -147,6 +146,7 @@
             <button class="danger-button" data-cancel-flow type="button">Cancel</button>
             <div>
               <button class="secondary" data-step-back="prices" type="button">Back</button>
+              <button class="secondary" id="printCeoChoices" type="button">Generate PDF</button>
               <button class="secondary" data-save-draft type="button">Save draft</button>
             </div>
           </div>
@@ -204,6 +204,19 @@
           <p class="eyebrow">History</p>
           <h2>Past transactions by month</h2>
         </div>
+        <div class="report-toolbar">
+          <button class="primary" id="currentMonthReport" type="button">Current month report</button>
+          <label>
+            Past month
+            <input id="reportMonth" type="month" />
+          </label>
+          <button class="secondary" id="pastMonthReport" type="button">Past month report</button>
+          <label>
+            Year
+            <input id="reportYear" type="number" min="2020" max="2100" />
+          </label>
+          <button class="secondary" id="yearReport" type="button">Year to date report</button>
+        </div>
         <div class="metric-grid" id="summaryCards"></div>
         <div class="card-split-grid" id="cardSplit"></div>
         <div class="transaction-list" id="transactionList"></div>
@@ -212,6 +225,6 @@
 
     <div class="toast is-hidden" id="toast"></div>
 
-    <script src="/static/app.js?v=20260813-font-light"></script>
+    <script src="/static/app.js?v=20260815-full-logo"></script>
   </body>
 </html>

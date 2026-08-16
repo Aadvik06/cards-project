@@ -10,6 +10,9 @@ This backend does not use machine learning. It uses explicit math rules taken fr
 - Ranks all eligible card/vendor options from best to worst.
 - Also returns a best-to-worst card ranking so employees can choose based on qualitative factors.
 - Lets employees view past transactions and monthly/year-to-date point totals.
+- Generates detailed PDF reports for the current month, past months, and year-to-date review.
+- Starts a lightweight month-end scheduler that writes the current month report at 11:59 PM on the last day of the month when the app is running.
+- Lets employees print a CEO-ready recommendation choices PDF from step 3 before final logging.
 - Lets employees save a local draft and cancel the current booking flow.
 - Separates flights, hotels, and non-travel Amex voucher tracking.
 - Records whether the employee accepted or declined the recommendation.
@@ -55,6 +58,8 @@ backend/
       transaction_service.py    # Final paid amount logging
       cap_usage_service.py      # Historical cap usage
       monthly_log_service.py    # Monthly audit log view
+      report_service.py         # Detailed PDF report generation
+      report_scheduler.py       # Month-end report generation hook
     static/
       index.html                # Employee booking interface
       styles.css                # Frontend styling
@@ -101,6 +106,39 @@ The web page guides the employee through four steps:
 The transaction is only logged after step 4. Voucher purchases use the same final logging step, but they skip card optimization because the purpose is only to track Amex points and cap usage.
 
 Employees can also open the Past transactions tab to see logged transactions, current-month points, current-month bonus points, year-to-date points, and year-to-date spend.
+
+## Reports
+
+The Past transactions tab includes report buttons for:
+
+- Current month PDF report.
+- Past month PDF report.
+- Year-to-date PDF report.
+
+Report endpoints:
+
+```text
+GET /reports/current-month.pdf
+GET /reports/monthly/{year}/{month}.pdf
+GET /reports/ytd/{year}.pdf
+```
+
+The PDF report includes:
+
+- Period summary.
+- Card-wise spend and points split.
+- Booking-type split.
+- Detailed transaction rows with employee, booking-for, card, vendor, route/stay details, class/time, paid amount, points, and description.
+
+The app also starts a lightweight scheduler. If the app is running at 11:59 PM on the final day of the month, it writes the current month report to:
+
+```text
+backend/data/runtime/reports/
+```
+
+Reports can always be regenerated from the database through the report buttons/endpoints, so the database remains the source of truth.
+
+Step 3 also includes a `Print CEO PDF` button. It opens a print-ready recommendation sheet that can be saved as PDF from the browser print dialog.
 
 ## API Flow
 
@@ -210,6 +248,86 @@ The database stores:
 - calculated points and net cost for audit review
 
 Card and vendor rules are still kept in JSON seed files because they are simple configuration data right now.
+
+## Free Trial Deployment: Vercel + Supabase
+
+This repository is ready for a free trial deployment using:
+
+```text
+Vercel Python Function
+  -> PreciseHub FastAPI app
+  -> Supabase PostgreSQL through DATABASE_URL
+```
+
+The repository includes:
+
+```text
+api/index.py
+vercel.json
+requirements.txt
+.env.example
+```
+
+### Privacy First
+
+Do not deploy this app without setting login credentials.
+
+The app uses HTTP Basic login when these environment variables are set:
+
+```text
+APP_USERNAME
+APP_PASSWORD
+```
+
+On Vercel, if these are missing, the app locks itself and returns an error instead of exposing company data publicly.
+
+Use a long random password. Do not commit real passwords or database URLs into GitHub.
+
+### Supabase Setup
+
+1. Create a Supabase project.
+2. Go to the Supabase project dashboard.
+3. Click **Connect**.
+4. Copy the **Transaction pooler** connection string.
+5. Use the pooler string with port `6543`.
+6. Replace the password placeholder with your actual database password.
+
+Use the connection string as:
+
+```text
+DATABASE_URL=postgres://...
+```
+
+Do not use the Supabase anon key or service-role key for this backend. This app only needs the PostgreSQL connection string.
+
+### Vercel Setup
+
+1. Push this repository to GitHub.
+2. In Vercel, create a new project from the GitHub repository.
+3. Keep the project private in GitHub.
+4. In Vercel project settings, add these environment variables for Production:
+
+```text
+DATABASE_URL
+APP_USERNAME
+APP_PASSWORD
+```
+
+5. Deploy the project.
+6. Open the Vercel URL.
+7. Confirm the browser asks for a username and password.
+8. Log in and create one test transaction.
+9. Confirm Past transactions loads correctly.
+
+Vercel environment variables are configured outside source code. Vercel documents that these values are encrypted at rest and can be scoped by environment. Supabase recommends the transaction pooler for serverless functions because serverless creates short-lived database connections.
+
+### Important Trial Limitations
+
+- Vercel free deployments are still internet URLs, so app login is mandatory.
+- Supabase free projects are suitable for testing, but you should export reports/backups regularly.
+- The automatic month-end background scheduler is disabled on Vercel because serverless functions do not run continuously.
+- Manual report generation still works from the Past transactions tab.
+- If the trial becomes operational for company records, move to paid hosting or enable stronger access control such as Vercel Deployment Protection or Cloudflare Access.
 
 ## Private Hosting
 

@@ -4,6 +4,7 @@ const vendorsByType = {
     { id: "amex_cleartrip_generic_voucher", name: "Cleartrip E-Gift Voucher", card: "American Express" },
     { id: "hdfc_smartbuy_flight", name: "HDFC SmartBuy", card: "HDFC Infinia" },
     { id: "icici_ishop_flight", name: "ICICI iShop", card: "ICICI Times Black" },
+    { id: "travel_agent_flight", name: "Travel Agent", card: "Bank transfer", isAgent: true },
   ],
   hotel: [
     { id: "amex_goibibo_hotel_voucher", name: "Goibibo Hotel E-Gift Voucher", card: "American Express" },
@@ -13,6 +14,7 @@ const vendorsByType = {
     { id: "hdfc_smartbuy_hotel", name: "HDFC SmartBuy", card: "HDFC Infinia" },
     { id: "icici_ishop_hotel", name: "ICICI iShop", card: "ICICI Times Black" },
     { id: "amex_fine_hotels", name: "American Express Fine Hotels", card: "American Express" },
+    { id: "travel_agent_hotel", name: "Travel Agent", card: "Bank transfer", isAgent: true },
   ],
 };
 
@@ -29,12 +31,14 @@ const cardNames = {
   amex: "American Express",
   hdfc_infinia: "HDFC Infinia",
   icici_times_black: "ICICI Times Black",
+  bank_transfer: "Bank Transfer",
 };
 
 const cardImages = {
   amex: "/static/assets/american-express.webp",
   hdfc_infinia: "/static/assets/hdfc-infinia.webp",
   icici_times_black: "/static/assets/icici-times-black.webp",
+  bank_transfer: "/static/assets/precisehub-logo.png",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -111,6 +115,7 @@ function cardImageFor(cardIdOrName) {
   if (name.includes("american express")) return cardImages.amex;
   if (name.includes("hdfc")) return cardImages.hdfc_infinia;
   if (name.includes("icici")) return cardImages.icici_times_black;
+  if (name.includes("bank transfer") || name.includes("travel agent")) return cardImages.bank_transfer;
   return cardImages.amex;
 }
 
@@ -233,7 +238,16 @@ function renderVendorRows() {
       </label>
       <label>
         Discount %
-        <input inputmode="decimal" min="0" max="100" step="0.01" type="number" data-vendor-discount="${vendor.id}" placeholder="0" />
+        <input
+          inputmode="decimal"
+          min="0"
+          max="100"
+          step="0.01"
+          type="number"
+          data-vendor-discount="${vendor.id}"
+          placeholder="0"
+          ${vendor.isAgent ? "value=\"0\" disabled" : ""}
+        />
       </label>
       ${vendorDetailFields(vendor)}
     `;
@@ -251,6 +265,16 @@ function vendorDetailFields(vendor) {
       <label>
         Flight timing
         <input id="${vendor.id}_flight_time" placeholder="Example: 10:30 AM - 12:45 PM" />
+      </label>
+      <label>
+        Class
+        <select id="${vendor.id}_flight_class">
+          <option value="">Select class</option>
+          <option value="Economy">Economy</option>
+          <option value="Premium Economy">Premium Economy</option>
+          <option value="Business">Business</option>
+          <option value="First Class">First Class</option>
+        </select>
       </label>
     `;
   }
@@ -271,7 +295,7 @@ function collectQuotes() {
     const amountInput = document.querySelector(`[data-vendor-amount="${vendor.id}"]`);
     const discountInput = document.querySelector(`[data-vendor-discount="${vendor.id}"]`);
     const amount = Number(amountInput.value);
-    const discountPercent = Number(discountInput.value || 0);
+    const discountPercent = Number(discountInput?.value || 0);
 
     if (amount > 0) {
       quotes.push({
@@ -297,6 +321,7 @@ function collectDetails() {
       ...common,
       airline: selectedVendorId ? $(`#${selectedVendorId}_airline`)?.value.trim() || "" : "",
       flight_time: selectedVendorId ? $(`#${selectedVendorId}_flight_time`)?.value.trim() || "" : "",
+      flight_class: selectedVendorId ? $(`#${selectedVendorId}_flight_class`)?.value || "" : "",
       from: $("#fromCity")?.value.trim() || "",
       to: $("#toCity")?.value.trim() || "",
       flight_date: $("#detailDate")?.value || "",
@@ -430,14 +455,16 @@ function renderRecommendation() {
 }
 
 function optionCard(option, isBest) {
+  const isBankTransfer = option.card_id === "bank_transfer";
   const button = isBest
-    ? `<button class="primary" type="button" data-accept-option="${option.id}">Use this card</button>`
+    ? `<button class="primary" type="button" data-accept-option="${option.id}">${isBankTransfer ? "Use this option" : "Use this card"}</button>`
     : `<button class="secondary" type="button" data-decline-option="${option.id}">Choose this instead</button>`;
+  const netCostLabel = isBankTransfer ? "Net cost" : "Net cost after points";
 
   return `
-    <article class="option-card ${isBest ? "best" : ""}">
+    <article class="option-card ${isBest ? "best" : ""} ${isBankTransfer ? "bank-transfer-option" : ""}">
       <div class="option-top">
-        <img class="option-card-image" src="${cardImageFor(option.card_id)}" alt="${escapeHtml(option.card_name)} card" />
+        <img class="option-card-image ${isBankTransfer ? "logo-image" : ""}" src="${cardImageFor(option.card_id)}" alt="${escapeHtml(option.card_name)} ${isBankTransfer ? "logo" : "card"}" />
         <div>
           <span class="rank-badge">Rank ${option.rank}</span>
           <h3>${escapeHtml(option.card_name)}</h3>
@@ -448,7 +475,7 @@ function optionCard(option, isBest) {
       ${optionDecisionDetails(option)}
       <div class="metric-grid">
         <div class="metric feature"><span>Cash to pay</span><strong>${formatMoney(option.price_after_discount)}</strong></div>
-        <div class="metric"><span>Net cost after points</span><strong>${formatMoney(option.net_cost)}</strong></div>
+        <div class="metric"><span>${netCostLabel}</span><strong>${formatMoney(option.net_cost)}</strong></div>
         <div class="metric"><span>Total points</span><strong>${formatNumber(option.total_points)}</strong></div>
         <div class="metric"><span>Point value</span><strong>${formatMoney(option.points_value_rupees)}</strong></div>
       </div>
@@ -460,6 +487,7 @@ function optionDecisionDetails(option) {
   if (state.travelType === "flight") {
     const airline = $(`#${option.vendor_id}_airline`)?.value;
     const timing = $(`#${option.vendor_id}_flight_time`)?.value;
+    const flightClass = $(`#${option.vendor_id}_flight_class`)?.value;
     return `
       <div class="option-detail-grid">
         <div class="option-detail"><span>Employee</span><strong>${detailValue($("#employeeName")?.value)}</strong></div>
@@ -468,6 +496,7 @@ function optionDecisionDetails(option) {
         <div class="option-detail"><span>Flight date</span><strong>${detailValue($("#detailDate")?.value)}</strong></div>
         <div class="option-detail"><span>Airline</span><strong>${detailValue(airline)}</strong></div>
         <div class="option-detail"><span>Flight time</span><strong>${detailValue(timing)}</strong></div>
+        <div class="option-detail"><span>Class</span><strong>${detailValue(flightClass)}</strong></div>
       </div>
     `;
   }
@@ -487,6 +516,238 @@ function optionDecisionDetails(option) {
   }
 
   return "";
+}
+
+function personalInfoRows() {
+  if (state.travelType === "flight") {
+    return [
+      ["Employee", $("#employeeName")?.value],
+      ["Booking for", $("#bookingFor")?.value],
+      ["Route", `${$("#fromCity")?.value || ""} to ${$("#toCity")?.value || ""}`],
+      ["Flight date", $("#detailDate")?.value],
+    ];
+  }
+  if (state.travelType === "hotel") {
+    return [
+      ["Employee", $("#employeeName")?.value],
+      ["Booking for", $("#bookingFor")?.value],
+      ["City", $("#hotelCity")?.value],
+      ["Check-in", $("#checkIn")?.value],
+      ["Check-out", $("#checkOut")?.value],
+    ];
+  }
+  return [];
+}
+
+function comparisonRowValue(option, rowKey) {
+  if (rowKey === "Rank") return option.rank;
+  if (rowKey === "Vendor") return option.vendor_name;
+  if (rowKey === "Airline") return $(`#${option.vendor_id}_airline`)?.value;
+  if (rowKey === "Flight time") return $(`#${option.vendor_id}_flight_time`)?.value;
+  if (rowKey === "Class") return $(`#${option.vendor_id}_flight_class`)?.value;
+  if (rowKey === "Hotel") return $(`#${option.vendor_id}_hotel`)?.value;
+  if (rowKey === "Cash to pay") return formatMoney(option.price_after_discount);
+  if (rowKey === "Net cost") return formatMoney(option.net_cost);
+  if (rowKey === "Total points") return formatNumber(option.total_points);
+  if (rowKey === "Point value") return formatMoney(option.points_value_rupees);
+  return "";
+}
+
+function setupChoicePdf() {
+  $("#printCeoChoices").addEventListener("click", () => {
+    if (!state.recommendation?.ranked_options?.length) {
+      showToast("Generate recommendations first.", true);
+      return;
+    }
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      showToast("Allow pop-ups to generate the PDF.", true);
+      return;
+    }
+
+    const options = state.recommendation.ranked_options;
+    const personalRows = personalInfoRows().map(([label, value]) => `
+      <tr><th>${escapeHtml(label)}</th><td>${detailValue(value)}</td></tr>
+    `).join("");
+    const comparisonRows = [
+      "Rank",
+      "Vendor",
+      ...(state.travelType === "flight" ? ["Airline", "Flight time", "Class"] : []),
+      ...(state.travelType === "hotel" ? ["Hotel"] : []),
+      "Cash to pay",
+      "Net cost",
+      "Total points",
+      "Point value",
+    ].map((label) => `
+      <tr>
+        <th>${escapeHtml(label)}</th>
+        ${options.map((option) => `<td>${detailValue(comparisonRowValue(option, label))}</td>`).join("")}
+      </tr>
+    `).join("");
+    const cardHeaders = options.map((option) => {
+      const isBankTransfer = option.card_id === "bank_transfer";
+      return `
+      <th class="card-head ${isBankTransfer ? "logo-card-head" : ""}">
+        <img src="${cardImageFor(option.card_id)}" alt="${escapeHtml(option.card_name)} ${isBankTransfer ? "logo" : "card"}" />
+        <strong>${escapeHtml(option.card_name)}</strong>
+      </th>
+    `;
+    }).join("");
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>PreciseHub Travel Choices</title>
+          <style>
+            @page { size: A4 portrait; margin: 9mm; }
+            * { box-sizing: border-box; }
+            body {
+              background: #ffffff;
+              color: #17211c;
+              font-family: Arial, sans-serif;
+              font-size: 9px;
+              margin: 0;
+            }
+            header {
+              align-items: center;
+              border-bottom: 2px solid #0a4d3f;
+              display: flex;
+              justify-content: space-between;
+              margin-bottom: 8px;
+              padding-bottom: 6px;
+            }
+            .logo-left { height: 28px; object-fit: contain; object-position: left center; width: 128px; }
+            .logo-right { height: 34px; object-fit: contain; object-position: right center; width: 124px; }
+            .title { text-align: center; }
+            h1 { color: #0a4d3f; font-size: 15px; line-height: 1.1; margin: 0 0 2px; }
+            .muted { color: #5f6d64; font-size: 8px; margin: 0; }
+            .section-title {
+              align-items: center;
+              color: #0a4d3f;
+              display: flex;
+              font-size: 10px;
+              font-weight: 700;
+              letter-spacing: 0;
+              margin: 7px 0 4px;
+            }
+            .section-title::after {
+              background: #dce4dc;
+              content: "";
+              flex: 1;
+              height: 1px;
+              margin-left: 8px;
+            }
+            table {
+              border-collapse: separate;
+              border-spacing: 0;
+              overflow: hidden;
+              table-layout: fixed;
+              width: 100%;
+            }
+            .info-table,
+            .compare-table {
+              border: 1px solid #dce4dc;
+              border-radius: 7px;
+            }
+            th,
+            td {
+              border-bottom: 1px solid #e5ebe5;
+              border-right: 1px solid #e5ebe5;
+              line-height: 1.2;
+              padding: 5px 6px;
+              text-align: left;
+              vertical-align: middle;
+              word-break: break-word;
+            }
+            tr:last-child th,
+            tr:last-child td { border-bottom: 0; }
+            th:last-child,
+            td:last-child { border-right: 0; }
+            .info-table th {
+              background: #f4faf7;
+              color: #5f6d64;
+              font-weight: 700;
+              width: 28%;
+            }
+            .compare-table th:first-child {
+              background: #f4faf7;
+              color: #5f6d64;
+              font-weight: 700;
+              width: 24%;
+            }
+            .compare-table td {
+              text-align: center;
+            }
+            .compare-table thead th {
+              background: #0a4d3f;
+              color: #ffffff;
+              text-align: center;
+            }
+            .compare-table thead th:first-child {
+              background: #0a4d3f;
+              color: #ffffff;
+            }
+            .card-head {
+              padding: 5px;
+            }
+            .card-head img {
+              border-radius: 5px;
+              display: block;
+              height: 34px;
+              margin: 0 auto 3px;
+              object-fit: contain;
+              width: 76px;
+            }
+            .logo-card-head img {
+              background: #ffffff;
+              border: 1px solid #dce4dc;
+              padding: 4px;
+              width: 96px;
+            }
+            .card-head strong {
+              display: block;
+              font-size: 8px;
+              line-height: 1.15;
+            }
+          </style>
+        </head>
+        <body>
+          <header>
+            <img class="logo-left" src="/static/assets/precisehub-logo.png" alt="PreciseHub" />
+            <div class="title">
+              <h1>Travel Choice Report</h1>
+              <p class="muted">Generated ${new Date().toLocaleString("en-IN")} before final transaction logging.</p>
+            </div>
+            <img class="logo-right" src="/static/assets/precise-logo-transparent.png" alt="Precise Biopharma Pvt. Ltd." />
+          </header>
+          <section>
+            <div class="section-title">Personal Information</div>
+            <table class="info-table"><tbody>${personalRows}</tbody></table>
+          </section>
+          <section>
+            <div class="section-title">Card Comparison</div>
+            <table class="compare-table">
+              <thead>
+                <tr><th>Detail</th>${cardHeaders}</tr>
+              </thead>
+              <tbody>${comparisonRows}</tbody>
+            </table>
+          </section>
+          <script>
+            window.onload = () => {
+              const images = Array.from(document.images);
+              Promise.all(images.map((image) => image.complete ? Promise.resolve() : new Promise((resolve) => {
+                image.onload = resolve;
+                image.onerror = resolve;
+              }))).then(() => window.print());
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  });
 }
 
 async function acceptOption(option) {
@@ -624,7 +885,7 @@ function setupDraftsAndCancel() {
 
 function collectFormValues() {
   const values = {};
-  $$("input, textarea").forEach((field) => {
+  $$("input, select, textarea").forEach((field) => {
     const key = field.id ||
       (field.dataset.vendorAmount ? `amount:${field.dataset.vendorAmount}` : "") ||
       (field.dataset.vendorDiscount ? `discount:${field.dataset.vendorDiscount}` : "");
@@ -679,6 +940,39 @@ function cancelFlow() {
 
 function setupStartOver() {
   $("#startOver").addEventListener("click", cancelFlow);
+}
+
+function setupReports() {
+  const now = new Date();
+  $("#reportMonth").value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  $("#reportYear").value = String(now.getFullYear());
+
+  $("#currentMonthReport").addEventListener("click", () => {
+    downloadReport("/reports/current-month.pdf");
+  });
+
+  $("#pastMonthReport").addEventListener("click", () => {
+    const value = $("#reportMonth").value;
+    if (!value) {
+      showToast("Select a month first.", true);
+      return;
+    }
+    const [year, month] = value.split("-");
+    downloadReport(`/reports/monthly/${year}/${Number(month)}.pdf`);
+  });
+
+  $("#yearReport").addEventListener("click", () => {
+    const year = Number($("#reportYear").value);
+    if (!year) {
+      showToast("Enter a year first.", true);
+      return;
+    }
+    downloadReport(`/reports/ytd/${year}.pdf`);
+  });
+}
+
+function downloadReport(url) {
+  window.open(url, "_blank");
 }
 
 async function loadTransactions() {
@@ -809,10 +1103,11 @@ function groupTransactionsByMonth(transactions) {
 function transactionRow(item, transactionNumber) {
     const details = item.details || {};
     const card = formatCardName(item.card_id);
+    const isBankTransfer = item.card_id === "bank_transfer";
     const row = document.createElement("article");
     row.className = "transaction-row";
     row.innerHTML = `
-      <img class="transaction-card-image" src="${cardImageFor(item.card_id)}" alt="${card} card" />
+      <img class="transaction-card-image ${isBankTransfer ? "logo-image" : ""}" src="${cardImageFor(item.card_id)}" alt="${card} ${isBankTransfer ? "logo" : "card"}" />
       <div>
         <strong>${transactionNumber}. ${card}</strong>
         <span>${formatDate(item.paid_at)} - ${item.travel_type} - ${details.vendor_name || item.vendor_id}</span>
@@ -834,3 +1129,5 @@ setupFinalForm();
 setupDraftsAndCancel();
 setupDraftLoading();
 setupStartOver();
+setupReports();
+setupChoicePdf();

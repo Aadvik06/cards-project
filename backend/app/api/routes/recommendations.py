@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
 from app.api.dependencies import (
     get_monthly_log_service,
     get_recommendation_service,
+    get_report_service,
     get_transaction_service,
 )
 from app.core.errors import OptimizerError
@@ -111,3 +112,31 @@ def get_monthly_log(year: int, month: int) -> dict:
     if month < 1 or month > 12:
         raise HTTPException(status_code=400, detail="Month must be between 1 and 12.")
     return get_monthly_log_service().get_month(year, month)
+
+
+@router.get("/reports/current-month.pdf")
+def current_month_report() -> Response:
+    pdf_bytes, filename = get_report_service().current_month_pdf()
+    return _pdf_response(pdf_bytes, filename)
+
+
+@router.get("/reports/monthly/{year}/{month}.pdf")
+def monthly_report(year: int, month: int) -> Response:
+    if month < 1 or month > 12:
+        raise HTTPException(status_code=400, detail="Month must be between 1 and 12.")
+    pdf_bytes, filename = get_report_service().month_pdf(year, month)
+    return _pdf_response(pdf_bytes, filename)
+
+
+@router.get("/reports/ytd/{year}.pdf")
+def year_to_date_report(year: int) -> Response:
+    pdf_bytes, filename = get_report_service().year_to_date_pdf(year)
+    return _pdf_response(pdf_bytes, filename)
+
+
+def _pdf_response(pdf_bytes: bytes, filename: str) -> Response:
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

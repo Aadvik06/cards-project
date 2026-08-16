@@ -7,6 +7,7 @@ from app.core.errors import InvalidDecisionError
 from app.domain.cap_tracker import remaining_bonus_cap
 from app.domain.enums import TravelType
 from app.domain.models import QuoteInput, Recommendation, TransactionRecord, UsageSnapshot
+from app.domain.recommendation_engine import AGENT_CARD_ID
 from app.services.recommendation_service import RecommendationService
 
 
@@ -62,6 +63,27 @@ class TransactionService:
             raise InvalidDecisionError("Final card/vendor pair was not eligible in the recommendation.")
 
         paid_at = paid_at or datetime.now(UTC)
+        if selected_card_id == AGENT_CARD_ID:
+            transaction = TransactionRecord(
+                id=str(uuid4()),
+                recommendation_id=recommendation_id,
+                employee_id=recommendation.employee_id,
+                travel_type=recommendation.travel_type,
+                card_id=selected_card_id,
+                vendor_id=selected_vendor_id,
+                final_amount_paid=money(final_amount_paid),
+                discount_rate=Decimal("0"),
+                base_points=points(Decimal("0")),
+                bonus_points=points(Decimal("0")),
+                total_points=points(Decimal("0")),
+                points_value_rupees=money(Decimal("0")),
+                net_cost=money(final_amount_paid),
+                paid_at=paid_at,
+                details=details or {},
+            )
+            self.recommendation_service.ledger.append_transaction(transaction)
+            return transaction
+
         final_quote = QuoteInput(
             vendor_id=selected_vendor_id,
             amount=final_amount_paid,
