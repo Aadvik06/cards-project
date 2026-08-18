@@ -158,6 +158,7 @@ class ReportService:
                 self._route_or_stay(row),
                 details.get("airline") or details.get("hotel_name") or "",
                 self._class_or_time(row),
+                self._flight_notes(row),
             ]
             data.append([
                 str(index),
@@ -229,7 +230,16 @@ class ReportService:
         if row["travel_type"] == "flight":
             return f"{details.get('from', '')} to {details.get('to', '')}".strip()
         if row["travel_type"] == "hotel":
-            return f"{details.get('city', '')} {details.get('check_in', '')} to {details.get('check_out', '')}".strip()
+            check_in = " ".join(value for value in [
+                details.get("check_in", ""),
+                details.get("check_in_time", ""),
+            ] if value)
+            check_out = " ".join(value for value in [
+                details.get("check_out", ""),
+                details.get("check_out_time", ""),
+            ] if value)
+            stay = f"{check_in} to {check_out}".strip()
+            return " | ".join(value for value in [details.get("city", ""), stay] if value)
         return details.get("vendor_name", "")
 
     def _logo_header(self, title: str, styles: dict) -> Table:
@@ -262,9 +272,58 @@ class ReportService:
     def _class_or_time(self, row: dict) -> str:
         details = row.get("details") or {}
         if row["travel_type"] == "flight":
-            values = [details.get("flight_class", ""), details.get("flight_time", "")]
+            values = [
+                details.get("flight_class", ""),
+                f"Outbound: {details.get('outbound_departure_time') or details.get('flight_time')}" if details.get("outbound_departure_time") or details.get("flight_time") else "",
+                f"Return: {details.get('return_departure_time') or details.get('return_flight_time')}" if details.get("return_departure_time") or details.get("return_flight_time") else "",
+            ]
             return " / ".join(value for value in values if value)
         return ""
+
+    def _flight_notes(self, row: dict) -> str:
+        if row["travel_type"] != "flight":
+            return ""
+        details = row.get("details") or {}
+        values = [
+            details.get("trip_region", ""),
+            details.get("trip_type", ""),
+            self._flight_leg_summary(details, "outbound"),
+            self._flight_leg_summary(details, "return"),
+        ]
+        return " | ".join(value for value in values if value)
+
+    def _flight_leg_summary(self, details: dict, prefix: str) -> str:
+        is_return = prefix == "return"
+        title = "Inbound flight" if is_return else "Outbound flight"
+        departure = details.get(f"{prefix}_departure_time") or (
+            details.get("return_flight_time") if is_return else details.get("flight_time")
+        )
+        arrival = details.get(f"{prefix}_arrival_time", "")
+        flight_1 = details.get(f"{prefix}_flight_1_duration") or (
+            "" if is_return else details.get("flight_duration")
+        )
+        layover = details.get(f"{prefix}_layover") or (
+            "No" if is_return else details.get("layover", "No")
+        )
+        layover_duration = details.get(f"{prefix}_layover_duration") or (
+            "" if is_return else details.get("layover_duration", "")
+        )
+        connecting_time = details.get(f"{prefix}_connection_time", "")
+        flight_2 = details.get(f"{prefix}_flight_2_duration", "")
+        cabin_class = details.get(f"{prefix}_cabin_class") or (
+            "" if is_return else details.get("flight_class", "")
+        )
+        parts = [
+            f"Departure: {departure}" if departure else "",
+            f"Arrival: {arrival}" if arrival else "",
+            f"Flight 1: {flight_1}" if flight_1 else "",
+            f"Layover: {layover_duration or 'Yes'}" if layover == "Yes" else "Layover: No",
+            f"Connecting flight: {connecting_time}" if connecting_time else "",
+            f"Flight 2: {flight_2}" if flight_2 else "",
+            f"Cabin class: {cabin_class}" if cabin_class else "",
+        ]
+        summary = "; ".join(value for value in parts if value)
+        return f"{title}: {summary}" if summary else ""
 
     def _money(self, value: float | str) -> str:
         return f"Rs {float(value):,.0f}"

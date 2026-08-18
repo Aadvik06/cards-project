@@ -52,6 +52,105 @@ const cardImages = {
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
+function timePicker(id) {
+  return `<input id="${id}" class="time-picker" type="time" step="900" />`;
+}
+
+function durationPicker(id) {
+  return `<input id="${id}" class="time-picker duration-picker" type="time" step="900" min="00:00" max="23:45" />`;
+}
+
+function cabinClassSelect(id) {
+  return `
+    <select id="${id}">
+      <option value="">Select class</option>
+      <option value="Economy">Economy</option>
+      <option value="Premium Economy">Premium Economy</option>
+      <option value="Business">Business</option>
+      <option value="First Class">First Class</option>
+    </select>
+  `;
+}
+
+function formatDurationValue(value) {
+  if (!value) return "";
+  const [hoursText, minutesText] = value.split(":");
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return value;
+  return [
+    hours ? `${hours}h` : "",
+    minutes ? `${minutes}m` : "",
+  ].filter(Boolean).join(" ") || "0m";
+}
+
+function flightLegValues(vendorId, prefix = "") {
+  const fieldPrefix = prefix ? `${prefix}_` : "";
+  const labelPrefix = prefix === "return" ? "Inbound" : "Outbound";
+  const layover = $(`#${vendorId}_${fieldPrefix}layover`)?.value || "No";
+  const layoverDuration = formatDurationValue($(`#${vendorId}_${fieldPrefix}layover_duration`)?.value);
+  return {
+    departure_time: $(`#${vendorId}_${prefix ? `${prefix}_flight_time` : "flight_time"}`)?.value || "",
+    arrival_time: $(`#${vendorId}_${prefix ? `${prefix}_arrival_time` : "outbound_arrival_time"}`)?.value || "",
+    flight_1_duration: formatDurationValue($(`#${vendorId}_${prefix ? `${prefix}_flight_duration` : "flight_duration"}`)?.value),
+    layover,
+    layover_duration: layover === "Yes" ? layoverDuration : "",
+    connecting_flight_time: $(`#${vendorId}_${prefix ? `${prefix}_connection_time` : "outbound_connection_time"}`)?.value || "",
+    flight_2_duration: formatDurationValue($(`#${vendorId}_${prefix ? `${prefix}_connection_duration` : "outbound_connection_duration"}`)?.value),
+    cabin_class: $(`#${vendorId}_${prefix ? `${prefix}_cabin_class` : "outbound_cabin_class"}`)?.value || "",
+    label: labelPrefix,
+  };
+}
+
+function flightLegSummary(leg) {
+  const parts = [
+    leg.departure_time ? `Departure: ${leg.departure_time}` : "",
+    leg.arrival_time ? `Arrival: ${leg.arrival_time}` : "",
+    leg.flight_1_duration ? `Flight 1: ${leg.flight_1_duration}` : "",
+    leg.layover === "Yes" ? `Layover: ${leg.layover_duration || "Yes"}` : "Layover: No",
+    leg.connecting_flight_time ? `Connecting flight: ${leg.connecting_flight_time}` : "",
+    leg.flight_2_duration ? `Flight 2: ${leg.flight_2_duration}` : "",
+    leg.cabin_class ? `Cabin class: ${leg.cabin_class}` : "",
+  ];
+  return parts.filter(Boolean).join(" | ");
+}
+
+function savedFlightLegSummary(details, prefix = "outbound") {
+  const isReturn = prefix === "return";
+  return flightLegSummary({
+    departure_time: details[`${prefix}_departure_time`] || (isReturn ? details.return_flight_time : details.flight_time),
+    arrival_time: details[`${prefix}_arrival_time`] || "",
+    flight_1_duration: details[`${prefix}_flight_1_duration`] || (!isReturn ? details.flight_duration : ""),
+    layover: details[`${prefix}_layover`] || (!isReturn ? details.layover : "No"),
+    layover_duration: details[`${prefix}_layover_duration`] || (!isReturn ? details.layover_duration : ""),
+    connecting_flight_time: details[`${prefix}_connection_time`] || "",
+    flight_2_duration: details[`${prefix}_flight_2_duration`] || "",
+    cabin_class: details[`${prefix}_cabin_class`] || (!isReturn ? details.flight_class : ""),
+  });
+}
+
+function updateLayoverControls(select) {
+  const targetIds = (select.dataset.layoverTargets || "").split(",").filter(Boolean);
+  const disabled = select.value !== "Yes";
+  targetIds.forEach((id) => {
+    const field = document.getElementById(id);
+    if (!field) return;
+    field.disabled = disabled;
+    if (disabled) field.value = "";
+  });
+}
+
+function setupLayoverControls() {
+  $$("[data-layover-targets]").forEach((select) => {
+    updateLayoverControls(select);
+    select.addEventListener("change", () => updateLayoverControls(select));
+  });
+}
+
+function refreshLayoverControls() {
+  $$("[data-layover-targets]").forEach((select) => updateLayoverControls(select));
+}
+
 const panels = {
   trip: $("#stepTrip"),
   prices: $("#stepPrices"),
@@ -373,10 +472,20 @@ function setupTripChoices() {
       state.travelType = button.dataset.travelType;
       $("#travelDate").value = today();
       $("#priceTitle").textContent = titleForType();
+      updateFlightOnlyFields();
       renderTripDetails();
       renderVendorRows();
       showBookingPanel("prices");
     });
+  });
+}
+
+function updateFlightOnlyFields() {
+  $$(".flight-only").forEach((field) => {
+    field.classList.toggle("is-hidden", state.travelType !== "flight");
+  });
+  $$(".hotel-only").forEach((field) => {
+    field.classList.toggle("is-hidden", state.travelType !== "hotel");
   });
 }
 
@@ -390,19 +499,25 @@ function renderTripDetails() {
   const details = $("#tripDetails");
   if (state.travelType === "flight") {
     details.innerHTML = `
-      <label>From<input id="fromCity" placeholder="Example: Mumbai" /></label>
-      <label>To<input id="toCity" placeholder="Example: Delhi" /></label>
+      <label>From<input id="fromCity" /></label>
+      <label>To<input id="toCity" /></label>
       <label>Flight date<input id="detailDate" type="date" /></label>
+      <label>
+        Trip type
+        <select id="flightTripType">
+          <option value="One way">One way</option>
+          <option value="Return">Return</option>
+        </select>
+      </label>
     `;
   } else if (state.travelType === "hotel") {
     details.innerHTML = `
-      <label>City<input id="hotelCity" placeholder="Example: Delhi" /></label>
       <label>Check-in<input id="checkIn" type="date" /></label>
       <label>Check-out<input id="checkOut" type="date" /></label>
     `;
   } else {
     details.innerHTML = `
-      <label>Voucher vendor<input id="voucherVendor" placeholder="Example: Office Supply Voucher" /></label>
+      <label>Voucher vendor<input id="voucherVendor" /></label>
       <label>Purchase date<input id="voucherDate" type="date" /></label>
     `;
   }
@@ -430,33 +545,36 @@ function renderVendorRows() {
 
   vendorsByType[state.travelType].forEach((vendor) => {
     const row = document.createElement("div");
-    row.className = "vendor-row";
+    row.className = `vendor-row ${state.travelType === "flight" ? "flight-vendor-row" : ""} ${state.travelType === "hotel" ? "hotel-vendor-row" : ""}`;
     row.innerHTML = `
       <div class="vendor-title">
         <strong>${vendor.name}</strong>
         <span>${vendor.card}</span>
       </div>
-      <label>
-        Price
-        <input inputmode="decimal" min="0" step="0.01" type="number" data-vendor-amount="${vendor.id}" placeholder="0" />
-      </label>
-      <label>
-        Discount %
-        <input
-          inputmode="decimal"
-          min="0"
-          max="100"
-          step="0.01"
-          type="number"
-          data-vendor-discount="${vendor.id}"
-          placeholder="0"
-          ${vendor.isAgent ? "value=\"0\" disabled" : ""}
-        />
-      </label>
-      ${vendorDetailFields(vendor)}
+      <div class="vendor-fields ${state.travelType === "flight" ? "flight-fields" : ""} ${state.travelType === "hotel" ? "hotel-fields" : ""}">
+        <label>
+          Price
+          <input inputmode="decimal" min="0" step="0.01" type="number" data-vendor-amount="${vendor.id}" placeholder="0" />
+        </label>
+        <label>
+          Discount %
+          <input
+            inputmode="decimal"
+            min="0"
+            max="100"
+            step="0.01"
+            type="number"
+            data-vendor-discount="${vendor.id}"
+            placeholder="0"
+            ${vendor.isAgent ? "value=\"0\" disabled" : ""}
+          />
+        </label>
+        ${vendorDetailFields(vendor)}
+      </div>
     `;
     vendorList.appendChild(row);
   });
+  setupLayoverControls();
 }
 
 function vendorDetailFields(vendor) {
@@ -464,29 +582,103 @@ function vendorDetailFields(vendor) {
     return `
       <label>
         Airline on this platform
-        <input id="${vendor.id}_airline" placeholder="Example: Indigo" />
+        <input id="${vendor.id}_airline" />
       </label>
-      <label>
-        Flight timing
-        <input id="${vendor.id}_flight_time" placeholder="Example: 10:30 AM - 12:45 PM" />
-      </label>
-      <label>
-        Class
-        <select id="${vendor.id}_flight_class">
-          <option value="">Select class</option>
-          <option value="Economy">Economy</option>
-          <option value="Premium Economy">Premium Economy</option>
-          <option value="Business">Business</option>
-          <option value="First Class">First Class</option>
-        </select>
-      </label>
+      <div class="field-section">
+        <h3>Outbound flight</h3>
+        <div class="field-section-grid">
+          <label>
+            Departure time
+            ${timePicker(`${vendor.id}_flight_time`)}
+          </label>
+          <label>
+            Arrival time
+            ${timePicker(`${vendor.id}_outbound_arrival_time`)}
+          </label>
+          <label>
+            Flight 1 duration
+            ${durationPicker(`${vendor.id}_flight_duration`)}
+          </label>
+          <label>
+            Layover
+            <select id="${vendor.id}_layover" data-layover-targets="${vendor.id}_layover_duration,${vendor.id}_outbound_connection_time,${vendor.id}_outbound_connection_duration">
+              <option value="No">No</option>
+              <option value="Yes">Yes</option>
+            </select>
+          </label>
+          <label>
+            Layover duration
+            ${durationPicker(`${vendor.id}_layover_duration`)}
+          </label>
+          <label>
+            Connecting flight time
+            ${timePicker(`${vendor.id}_outbound_connection_time`)}
+          </label>
+          <label>
+            Flight 2 duration
+            ${durationPicker(`${vendor.id}_outbound_connection_duration`)}
+          </label>
+          <label>
+            Cabin class
+            ${cabinClassSelect(`${vendor.id}_outbound_cabin_class`)}
+          </label>
+        </div>
+      </div>
+      <div class="field-section">
+        <h3>Inbound flight</h3>
+        <div class="field-section-grid">
+          <label>
+            Departure time
+            ${timePicker(`${vendor.id}_return_flight_time`)}
+          </label>
+          <label>
+            Arrival time
+            ${timePicker(`${vendor.id}_return_arrival_time`)}
+          </label>
+          <label>
+            Flight 1 duration
+            ${durationPicker(`${vendor.id}_return_flight_duration`)}
+          </label>
+          <label>
+            Layover
+            <select id="${vendor.id}_return_layover" data-layover-targets="${vendor.id}_return_layover_duration,${vendor.id}_return_connection_time,${vendor.id}_return_connection_duration">
+              <option value="No">No</option>
+              <option value="Yes">Yes</option>
+            </select>
+          </label>
+          <label>
+            Layover duration
+            ${durationPicker(`${vendor.id}_return_layover_duration`)}
+          </label>
+          <label>
+            Connecting flight time
+            ${timePicker(`${vendor.id}_return_connection_time`)}
+          </label>
+          <label>
+            Flight 2 duration
+            ${durationPicker(`${vendor.id}_return_connection_duration`)}
+          </label>
+          <label>
+            Cabin class
+            ${cabinClassSelect(`${vendor.id}_return_cabin_class`)}
+          </label>
+        </div>
+      </div>
     `;
   }
   if (state.travelType === "hotel") {
     return `
       <label>
         Hotel on this platform
-        <input id="${vendor.id}_hotel" placeholder="Example: Taj Palace" />
+        <input id="${vendor.id}_hotel" />
+      </label>
+      <label>
+        Check-in time
+        ${timePicker(`${vendor.id}_check_in_time`)}
+      </label>
+      <label>
+        Check-out time
+        ${timePicker(`${vendor.id}_check_out_time`)}
       </label>
     `;
   }
@@ -521,11 +713,35 @@ function collectDetails() {
     description: $("#finalDescription").value.trim(),
   };
   if (state.travelType === "flight") {
+    const outboundLeg = selectedVendorId ? flightLegValues(selectedVendorId) : {};
+    const returnLeg = selectedVendorId ? flightLegValues(selectedVendorId, "return") : {};
     return {
       ...common,
       airline: selectedVendorId ? $(`#${selectedVendorId}_airline`)?.value.trim() || "" : "",
-      flight_time: selectedVendorId ? $(`#${selectedVendorId}_flight_time`)?.value.trim() || "" : "",
-      flight_class: selectedVendorId ? $(`#${selectedVendorId}_flight_class`)?.value || "" : "",
+      flight_time: outboundLeg.departure_time || "",
+      return_flight_time: returnLeg.departure_time || "",
+      flight_duration: outboundLeg.flight_1_duration || "",
+      layover: outboundLeg.layover || "No",
+      layover_duration: outboundLeg.layover_duration || "",
+      outbound_departure_time: outboundLeg.departure_time || "",
+      outbound_arrival_time: outboundLeg.arrival_time || "",
+      outbound_flight_1_duration: outboundLeg.flight_1_duration || "",
+      outbound_layover: outboundLeg.layover || "No",
+      outbound_layover_duration: outboundLeg.layover_duration || "",
+      outbound_connection_time: outboundLeg.connecting_flight_time || "",
+      outbound_flight_2_duration: outboundLeg.flight_2_duration || "",
+      outbound_cabin_class: outboundLeg.cabin_class || "",
+      return_departure_time: returnLeg.departure_time || "",
+      return_arrival_time: returnLeg.arrival_time || "",
+      return_flight_1_duration: returnLeg.flight_1_duration || "",
+      return_layover: returnLeg.layover || "No",
+      return_layover_duration: returnLeg.layover_duration || "",
+      return_connection_time: returnLeg.connecting_flight_time || "",
+      return_flight_2_duration: returnLeg.flight_2_duration || "",
+      return_cabin_class: returnLeg.cabin_class || "",
+      flight_class: outboundLeg.cabin_class || "",
+      trip_region: $("#tripRegion")?.value || "",
+      trip_type: $("#flightTripType")?.value || "",
       from: $("#fromCity")?.value.trim() || "",
       to: $("#toCity")?.value.trim() || "",
       flight_date: $("#detailDate")?.value || "",
@@ -537,7 +753,9 @@ function collectDetails() {
       hotel_name: selectedVendorId ? $(`#${selectedVendorId}_hotel`)?.value.trim() || "" : "",
       city: $("#hotelCity")?.value.trim() || "",
       check_in: $("#checkIn")?.value || "",
+      check_in_time: selectedVendorId ? $(`#${selectedVendorId}_check_in_time`)?.value || "" : "",
       check_out: $("#checkOut")?.value || "",
+      check_out_time: selectedVendorId ? $(`#${selectedVendorId}_check_out_time`)?.value || "" : "",
     };
   }
   return {
@@ -703,23 +921,27 @@ function optionCard(option, isBest) {
 function optionDecisionDetails(option) {
   if (state.travelType === "flight") {
     const airline = $(`#${option.vendor_id}_airline`)?.value;
-    const timing = $(`#${option.vendor_id}_flight_time`)?.value;
-    const flightClass = $(`#${option.vendor_id}_flight_class`)?.value;
+    const outboundLeg = flightLegValues(option.vendor_id);
+    const returnLeg = flightLegValues(option.vendor_id, "return");
     return `
       <div class="option-detail-grid">
         <div class="option-detail"><span>Employee</span><strong>${detailValue($("#employeeName")?.value)}</strong></div>
         <div class="option-detail"><span>Booking for</span><strong>${detailValue($("#bookingFor")?.value)}</strong></div>
+        <div class="option-detail"><span>Trip region</span><strong>${detailValue($("#tripRegion")?.value)}</strong></div>
+        <div class="option-detail"><span>Trip type</span><strong>${detailValue($("#flightTripType")?.value)}</strong></div>
         <div class="option-detail"><span>Route</span><strong>${detailValue($("#fromCity")?.value)} to ${detailValue($("#toCity")?.value)}</strong></div>
         <div class="option-detail"><span>Flight date</span><strong>${detailValue($("#detailDate")?.value)}</strong></div>
         <div class="option-detail"><span>Airline</span><strong>${detailValue(airline)}</strong></div>
-        <div class="option-detail"><span>Flight time</span><strong>${detailValue(timing)}</strong></div>
-        <div class="option-detail"><span>Class</span><strong>${detailValue(flightClass)}</strong></div>
+        <div class="option-detail wide-detail"><span>Outbound flight</span><strong>${detailValue(flightLegSummary(outboundLeg))}</strong></div>
+        <div class="option-detail wide-detail"><span>Inbound flight</span><strong>${detailValue(flightLegSummary(returnLeg))}</strong></div>
       </div>
     `;
   }
 
   if (state.travelType === "hotel") {
     const hotelName = $(`#${option.vendor_id}_hotel`)?.value;
+    const checkInTime = $(`#${option.vendor_id}_check_in_time`)?.value;
+    const checkOutTime = $(`#${option.vendor_id}_check_out_time`)?.value;
     return `
       <div class="option-detail-grid">
         <div class="option-detail"><span>Employee</span><strong>${detailValue($("#employeeName")?.value)}</strong></div>
@@ -728,6 +950,8 @@ function optionDecisionDetails(option) {
         <div class="option-detail"><span>Hotel</span><strong>${detailValue(hotelName)}</strong></div>
         <div class="option-detail"><span>Check-in</span><strong>${detailValue($("#checkIn")?.value)}</strong></div>
         <div class="option-detail"><span>Check-out</span><strong>${detailValue($("#checkOut")?.value)}</strong></div>
+        <div class="option-detail"><span>Check-in time</span><strong>${detailValue(checkInTime)}</strong></div>
+        <div class="option-detail"><span>Check-out time</span><strong>${detailValue(checkOutTime)}</strong></div>
       </div>
     `;
   }
@@ -740,6 +964,8 @@ function personalInfoRows() {
     return [
       ["Employee", $("#employeeName")?.value],
       ["Booking for", $("#bookingFor")?.value],
+      ["Trip region", $("#tripRegion")?.value],
+      ["Trip type", $("#flightTripType")?.value],
       ["Route", `${$("#fromCity")?.value || ""} to ${$("#toCity")?.value || ""}`],
       ["Flight date", $("#detailDate")?.value],
     ];
@@ -760,9 +986,11 @@ function comparisonRowValue(option, rowKey) {
   if (rowKey === "Rank") return option.rank;
   if (rowKey === "Vendor") return option.vendor_name;
   if (rowKey === "Airline") return $(`#${option.vendor_id}_airline`)?.value;
-  if (rowKey === "Flight time") return $(`#${option.vendor_id}_flight_time`)?.value;
-  if (rowKey === "Class") return $(`#${option.vendor_id}_flight_class`)?.value;
+  if (rowKey === "Outbound flight") return flightLegSummary(flightLegValues(option.vendor_id));
+  if (rowKey === "Inbound flight") return flightLegSummary(flightLegValues(option.vendor_id, "return"));
   if (rowKey === "Hotel") return $(`#${option.vendor_id}_hotel`)?.value;
+  if (rowKey === "Check-in time") return $(`#${option.vendor_id}_check_in_time`)?.value;
+  if (rowKey === "Check-out time") return $(`#${option.vendor_id}_check_out_time`)?.value;
   if (rowKey === "Cash to pay") return formatMoney(option.price_after_discount);
   if (rowKey === "Net cost") return formatMoney(option.net_cost);
   if (rowKey === "Total points") return formatNumber(option.total_points);
@@ -789,8 +1017,8 @@ function setupChoicePdf() {
     const comparisonRows = [
       "Rank",
       "Vendor",
-      ...(state.travelType === "flight" ? ["Airline", "Flight time", "Class"] : []),
-      ...(state.travelType === "hotel" ? ["Hotel"] : []),
+      ...(state.travelType === "flight" ? ["Airline", "Outbound flight", "Inbound flight"] : []),
+      ...(state.travelType === "hotel" ? ["Hotel", "Check-in time", "Check-out time"] : []),
       "Cash to pay",
       "Net cost",
       "Total points",
@@ -1132,9 +1360,11 @@ function setupDraftLoading() {
     state.travelType = draft.travelType;
     state.highestStep = Math.max(2, draft.highestStep || 2);
     $("#priceTitle").textContent = titleForType();
+    updateFlightOnlyFields();
     renderTripDetails();
     renderVendorRows();
     fillFormValues(draft.values);
+    refreshLayoverControls();
     showBookingPanel("prices");
     showToast("Draft loaded.");
   });
@@ -1150,6 +1380,7 @@ function cancelFlow() {
   $("#finalForm").reset();
   $("#tripDetails").innerHTML = "";
   $("#vendorList").innerHTML = "";
+  updateFlightOnlyFields();
   localStorage.removeItem(draftKey);
   setStatus("Ready");
   showBookingPanel("trip");
@@ -1338,13 +1569,14 @@ function transactionRow(item, transactionNumber) {
     const details = item.details || {};
     const card = formatCardName(item.card_id);
     const isBankTransfer = item.card_id === "bank_transfer";
+    const detailLine = transactionDetailLine(item);
     const row = document.createElement("article");
     row.className = "transaction-row";
     row.innerHTML = `
       <img class="transaction-card-image ${isBankTransfer ? "logo-image" : ""}" src="${cardImageFor(item.card_id)}" alt="${card} ${isBankTransfer ? "logo" : "card"}" />
       <div>
         <strong>${transactionNumber}. ${card}</strong>
-        <span>${formatDate(item.paid_at)} - ${item.travel_type} - ${details.vendor_name || item.vendor_id}</span>
+        <span>${detailLine}</span>
         <small>${details.description || ""}</small>
       </div>
       <div><span>Paid</span><strong>${formatMoney(item.final_amount_paid)}</strong></div>
@@ -1352,6 +1584,33 @@ function transactionRow(item, transactionNumber) {
       <button class="danger-button compact" data-delete-transaction="${item.id}" type="button">Delete</button>
     `;
     return row;
+}
+
+function transactionDetailLine(item) {
+  const details = item.details || {};
+  const parts = [
+    formatDate(item.paid_at),
+    item.travel_type,
+    details.vendor_name || item.vendor_id,
+  ];
+  if (item.travel_type === "flight") {
+    parts.push(`${details.from || ""} to ${details.to || ""}`.trim());
+    parts.push(details.trip_region);
+    parts.push(details.trip_type);
+    parts.push(details.airline);
+    const outboundSummary = savedFlightLegSummary(details, "outbound");
+    const returnSummary = savedFlightLegSummary(details, "return");
+    parts.push(outboundSummary ? `Outbound flight: ${outboundSummary}` : "");
+    parts.push(returnSummary ? `Inbound flight: ${returnSummary}` : "");
+  } else if (item.travel_type === "hotel") {
+    parts.push(details.city);
+    parts.push(details.hotel_name);
+    parts.push(details.check_in ? `Check-in: ${details.check_in}` : "");
+    parts.push(details.check_in_time ? `Check-in time: ${details.check_in_time}` : "");
+    parts.push(details.check_out ? `Check-out: ${details.check_out}` : "");
+    parts.push(details.check_out_time ? `Check-out time: ${details.check_out_time}` : "");
+  }
+  return parts.filter(Boolean).join(" - ");
 }
 
 setupTabs();

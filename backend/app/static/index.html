@@ -4,9 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PreciseHub</title>
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/assets/apple-touch-icon.png?v=20260815" />
-    <link rel="icon" type="image/png" href="/static/assets/favicon.png?v=20260815" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260815-supabase-auth" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/assets/apple-touch-icon.png?v=20260817" />
+    <link rel="icon" type="image/png" href="/static/assets/favicon.png?v=20260817" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260817-hotel-city-top-row" />
   </head>
   <body class="auth-pending">
     <section class="auth-screen is-hidden" id="authGate">
@@ -134,15 +134,26 @@
             <div class="form-grid">
               <label>
                 Employee name
-                <input id="employeeName" autocomplete="name" placeholder="Example: Asha Mehta" />
+                <input id="employeeName" autocomplete="name" />
               </label>
               <label>
                 Booking for
-                <input id="bookingFor" autocomplete="name" placeholder="Example: Rahul Shah" />
+                <input id="bookingFor" autocomplete="name" />
               </label>
               <label>
                 Booking date
                 <input id="travelDate" type="date" />
+              </label>
+              <label class="hotel-only is-hidden">
+                City
+                <input id="hotelCity" />
+              </label>
+              <label class="flight-only is-hidden">
+                Trip region
+                <select id="tripRegion">
+                  <option value="Domestic">Domestic</option>
+                  <option value="International">International</option>
+                </select>
               </label>
             </div>
 
@@ -173,7 +184,7 @@
           <div class="decline-box is-hidden" id="declineBox">
             <label>
               Reason for choosing a different card
-              <textarea id="declineReason" rows="3" placeholder="Example: employee preference, booking issue, vendor unavailable"></textarea>
+              <textarea id="declineReason" rows="3"></textarea>
             </label>
             <div class="actions">
               <button class="secondary" id="cancelDecline" type="button">Cancel</button>
@@ -265,6 +276,6 @@
     <div class="toast is-hidden" id="toast"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/static/app.js?v=20260815-supabase-auth"></script>
+    <script src="/static/app.js?v=20260817-hotel-city-top-row"></script>
   </body>
 </html>

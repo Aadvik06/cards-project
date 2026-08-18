@@ -424,13 +424,62 @@ textarea:focus {
 
 .vendor-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 150px 130px;
-  gap: 12px;
-  align-items: end;
+  grid-template-columns: minmax(190px, 0.58fr) minmax(0, 2.42fr);
+  gap: 18px;
+  align-items: start;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfb;
+}
+
+.flight-vendor-row {
+  grid-template-columns: 1fr;
+}
+
+.hotel-vendor-row {
+  grid-template-columns: 1fr;
+}
+
+.vendor-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.flight-fields {
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+}
+
+.hotel-fields {
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+}
+
+.field-section {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(18, 110, 90, 0.12);
+  border-radius: 8px;
+  background: rgba(236, 247, 242, 0.55);
+}
+
+.field-section h3 {
+  color: var(--accent-strong);
+  font-size: 15px;
+  margin: 0;
+}
+
+.field-section-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.wide-detail {
+  grid-column: span 2;
 }
 
 .vendor-row.simple {
@@ -1024,7 +1073,8 @@ textarea:hover {
   border-color: rgba(18, 110, 90, 0.34);
 }
 
-input:disabled {
+input:disabled,
+select:disabled {
   background: #f3f6f2;
   color: var(--muted);
   cursor: not-allowed;
@@ -1155,6 +1205,17 @@ input:disabled {
 
   .vendor-row {
     grid-template-columns: 1fr;
+  }
+
+  .vendor-fields,
+  .flight-fields,
+  .hotel-fields,
+  .field-section-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wide-detail {
+    grid-column: auto;
   }
 
   .option-top,
