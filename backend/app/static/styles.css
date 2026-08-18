@@ -472,6 +472,13 @@ textarea:focus {
   margin: 0;
 }
 
+.field-section.is-disabled {
+  background: #f3f6f2;
+  border-color: rgba(180, 190, 183, 0.55);
+  color: var(--muted);
+  opacity: 0.72;
+}
+
 .field-section-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(130px, 1fr));

@@ -103,11 +103,19 @@ function flightLegValues(vendorId, prefix = "") {
 }
 
 function flightLegSummary(leg) {
+  const hasLegDetails = Boolean(
+    leg.departure_time ||
+    leg.arrival_time ||
+    leg.flight_1_duration ||
+    leg.connecting_flight_time ||
+    leg.flight_2_duration ||
+    leg.cabin_class
+  );
   const parts = [
     leg.departure_time ? `Departure: ${leg.departure_time}` : "",
     leg.arrival_time ? `Arrival: ${leg.arrival_time}` : "",
     leg.flight_1_duration ? `Flight 1: ${leg.flight_1_duration}` : "",
-    leg.layover === "Yes" ? `Layover: ${leg.layover_duration || "Yes"}` : "Layover: No",
+    leg.layover === "Yes" ? `Layover: ${leg.layover_duration || "Yes"}` : (hasLegDetails ? "Layover: No" : ""),
     leg.connecting_flight_time ? `Connecting flight: ${leg.connecting_flight_time}` : "",
     leg.flight_2_duration ? `Flight 2: ${leg.flight_2_duration}` : "",
     leg.cabin_class ? `Cabin class: ${leg.cabin_class}` : "",
@@ -149,6 +157,30 @@ function setupLayoverControls() {
 
 function refreshLayoverControls() {
   $$("[data-layover-targets]").forEach((select) => updateLayoverControls(select));
+}
+
+function updateTripTypeControls() {
+  if (state.travelType !== "flight") return;
+  const isOneWay = $("#flightTripType")?.value === "One way";
+  $$(".inbound-only").forEach((field) => {
+    field.disabled = isOneWay;
+    if (isOneWay) field.value = "";
+  });
+  $$("[data-inbound-section]").forEach((section) => {
+    section.classList.toggle("is-disabled", isOneWay);
+    section.querySelectorAll("input, select").forEach((field) => {
+      field.disabled = isOneWay;
+      if (isOneWay) field.value = "";
+    });
+  });
+  refreshLayoverControls();
+}
+
+function setupTripTypeControls() {
+  const tripType = $("#flightTripType");
+  if (!tripType) return;
+  tripType.addEventListener("change", updateTripTypeControls);
+  updateTripTypeControls();
 }
 
 const panels = {
@@ -502,7 +534,7 @@ function renderTripDetails() {
       <label>From<input id="fromCity" /></label>
       <label>To<input id="toCity" /></label>
       <label>Flight date<input id="detailDate" type="date" /></label>
-      <label>Return flight date<input id="returnFlightDate" type="date" /></label>
+      <label>Return flight date<input id="returnFlightDate" class="inbound-only" type="date" /></label>
       <label>
         Trip type
         <select id="flightTripType">
@@ -576,6 +608,7 @@ function renderVendorRows() {
     vendorList.appendChild(row);
   });
   setupLayoverControls();
+  setupTripTypeControls();
 }
 
 function vendorDetailFields(vendor) {
@@ -625,7 +658,7 @@ function vendorDetailFields(vendor) {
           </label>
         </div>
       </div>
-      <div class="field-section">
+      <div class="field-section" data-inbound-section>
         <h3>Inbound flight</h3>
         <div class="field-section-grid">
           <label>
@@ -1369,6 +1402,7 @@ function setupDraftLoading() {
     renderVendorRows();
     fillFormValues(draft.values);
     refreshLayoverControls();
+    updateTripTypeControls();
     showBookingPanel("prices");
     showToast("Draft loaded.");
   });

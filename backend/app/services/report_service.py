@@ -318,11 +318,12 @@ class ReportService:
         cabin_class = details.get(f"{prefix}_cabin_class") or (
             "" if is_return else details.get("flight_class", "")
         )
+        has_leg_details = any([departure, arrival, flight_1, connecting_time, flight_2, cabin_class])
         parts = [
             f"Departure: {departure}" if departure else "",
             f"Arrival: {arrival}" if arrival else "",
             f"Flight 1: {flight_1}" if flight_1 else "",
-            f"Layover: {layover_duration or 'Yes'}" if layover == "Yes" else "Layover: No",
+            f"Layover: {layover_duration or 'Yes'}" if layover == "Yes" else ("Layover: No" if has_leg_details else ""),
             f"Connecting flight: {connecting_time}" if connecting_time else "",
             f"Flight 2: {flight_2}" if flight_2 else "",
             f"Cabin class: {cabin_class}" if cabin_class else "",
