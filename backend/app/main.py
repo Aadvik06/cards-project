@@ -13,6 +13,7 @@ def create_app():
         from fastapi import FastAPI
         from fastapi import Request
         from fastapi.responses import FileResponse
+        from fastapi.responses import JSONResponse
         from fastapi.responses import PlainTextResponse
         from fastapi.staticfiles import StaticFiles
     except ImportError as exc:
@@ -31,6 +32,16 @@ def create_app():
         version="0.1.0",
         description="Deterministic travel credit-card recommendation backend.",
     )
+
+    @app.exception_handler(Exception)
+    async def unexpected_error_handler(request: Request, exc: Exception):
+        detail = "Server error while processing the request. Check Vercel runtime logs."
+        if os.environ.get("DEBUG_ERRORS") == "1":
+            detail = f"Server error: {type(exc).__name__}: {exc}"
+        return JSONResponse(
+            status_code=500,
+            content={"detail": detail},
+        )
 
     @app.middleware("http")
     async def require_private_login(request: Request, call_next):

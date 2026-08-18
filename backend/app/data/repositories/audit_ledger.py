@@ -52,9 +52,8 @@ class AuditLedger:
                 self._sql("DELETE FROM recommendation_options WHERE recommendation_id = ?"),
                 (recommendation.id,),
             )
-            connection.executemany(
-                self._sql(
-                    """
+            option_sql = self._sql(
+                """
                 INSERT INTO recommendation_options (
                     id, recommendation_id, rank, card_id, card_name, vendor_id, vendor_name,
                     travel_type, listed_amount, eligible_amount, cash_component, discount_rate,
@@ -63,12 +62,16 @@ class AuditLedger:
                     cap_remaining_after, explanation, card_rank
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
-                ),
-                [
-                    self._option_row(recommendation.id, option, self._card_rank(recommendation, option))
-                    for option in recommendation.ranked_options
-                ],
             )
+            option_rows = [
+                self._option_row(recommendation.id, option, self._card_rank(recommendation, option))
+                for option in recommendation.ranked_options
+            ]
+            if self.database_url:
+                for option_row in option_rows:
+                    connection.execute(option_sql, option_row)
+            else:
+                connection.executemany(option_sql, option_rows)
 
     def get_recommendation(self, recommendation_id: str) -> Recommendation | None:
         with self._connect() as connection:

@@ -553,7 +553,7 @@ async function postJson(url, body) {
     headers: await authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(body),
   });
-  const data = await response.json();
+  const data = await readResponseBody(response);
   if (!response.ok) throw new Error(data.detail || "Something went wrong.");
   return data;
 }
@@ -563,9 +563,19 @@ async function deleteJson(url) {
     method: "DELETE",
     headers: await authHeaders(),
   });
-  const data = await response.json();
+  const data = await readResponseBody(response);
   if (!response.ok) throw new Error(data.detail || "Something went wrong.");
   return data;
+}
+
+async function readResponseBody(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { detail: text };
+  }
 }
 
 function setupQuoteForm() {
