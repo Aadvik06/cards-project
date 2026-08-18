@@ -502,6 +502,7 @@ function renderTripDetails() {
       <label>From<input id="fromCity" /></label>
       <label>To<input id="toCity" /></label>
       <label>Flight date<input id="detailDate" type="date" /></label>
+      <label>Return flight date<input id="returnFlightDate" type="date" /></label>
       <label>
         Trip type
         <select id="flightTripType">
@@ -745,6 +746,7 @@ function collectDetails() {
       from: $("#fromCity")?.value.trim() || "",
       to: $("#toCity")?.value.trim() || "",
       flight_date: $("#detailDate")?.value || "",
+      return_flight_date: $("#returnFlightDate")?.value || "",
     };
   }
   if (state.travelType === "hotel") {
@@ -931,6 +933,7 @@ function optionDecisionDetails(option) {
         <div class="option-detail"><span>Trip type</span><strong>${detailValue($("#flightTripType")?.value)}</strong></div>
         <div class="option-detail"><span>Route</span><strong>${detailValue($("#fromCity")?.value)} to ${detailValue($("#toCity")?.value)}</strong></div>
         <div class="option-detail"><span>Flight date</span><strong>${detailValue($("#detailDate")?.value)}</strong></div>
+        <div class="option-detail"><span>Return flight date</span><strong>${detailValue($("#returnFlightDate")?.value)}</strong></div>
         <div class="option-detail"><span>Airline</span><strong>${detailValue(airline)}</strong></div>
         <div class="option-detail wide-detail"><span>Outbound flight</span><strong>${detailValue(flightLegSummary(outboundLeg))}</strong></div>
         <div class="option-detail wide-detail"><span>Inbound flight</span><strong>${detailValue(flightLegSummary(returnLeg))}</strong></div>
@@ -968,6 +971,7 @@ function personalInfoRows() {
       ["Trip type", $("#flightTripType")?.value],
       ["Route", `${$("#fromCity")?.value || ""} to ${$("#toCity")?.value || ""}`],
       ["Flight date", $("#detailDate")?.value],
+      ["Return flight date", $("#returnFlightDate")?.value],
     ];
   }
   if (state.travelType === "hotel") {
@@ -1598,6 +1602,8 @@ function transactionDetailLine(item) {
     parts.push(details.trip_region);
     parts.push(details.trip_type);
     parts.push(details.airline);
+    parts.push(details.flight_date ? `Flight date: ${details.flight_date}` : "");
+    parts.push(details.return_flight_date ? `Return flight date: ${details.return_flight_date}` : "");
     const outboundSummary = savedFlightLegSummary(details, "outbound");
     const returnSummary = savedFlightLegSummary(details, "return");
     parts.push(outboundSummary ? `Outbound flight: ${outboundSummary}` : "");

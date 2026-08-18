@@ -228,7 +228,12 @@ class ReportService:
     def _route_or_stay(self, row: dict) -> str:
         details = row.get("details") or {}
         if row["travel_type"] == "flight":
-            return f"{details.get('from', '')} to {details.get('to', '')}".strip()
+            route = f"{details.get('from', '')} to {details.get('to', '')}".strip()
+            dates = [
+                f"Flight: {details.get('flight_date')}" if details.get("flight_date") else "",
+                f"Return: {details.get('return_flight_date')}" if details.get("return_flight_date") else "",
+            ]
+            return " | ".join(value for value in [route, *dates] if value)
         if row["travel_type"] == "hotel":
             check_in = " ".join(value for value in [
                 details.get("check_in", ""),
