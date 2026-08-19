@@ -159,6 +159,7 @@ class ReportService:
                 details.get("airline") or details.get("hotel_name") or "",
                 self._class_or_time(row),
                 self._flight_notes(row),
+                self._payment_notes(details),
             ]
             data.append([
                 str(index),
@@ -330,6 +331,20 @@ class ReportService:
         ]
         summary = "; ".join(value for value in parts if value)
         return f"{title}: {summary}" if summary else ""
+
+    def _payment_notes(self, details: dict) -> str:
+        voucher_face_value = details.get("voucher_face_value_used")
+        voucher_purchase_amount = details.get("voucher_purchase_amount_paid") or details.get("voucher_amount_paid")
+        card_balance = details.get("card_balance_paid") or details.get("cash_amount_paid")
+        checkout_value = details.get("checkout_value")
+        if not voucher_purchase_amount and not card_balance:
+            return ""
+        return " | ".join(value for value in [
+            f"Booking value: {self._money(checkout_value)}" if checkout_value else "",
+            f"Voucher value used: {self._money(voucher_face_value)}" if voucher_face_value else "",
+            f"Voucher purchase cost: {self._money(voucher_purchase_amount or 0)}",
+            f"Direct card balance: {self._money(card_balance or 0)}",
+        ])
 
     def _money(self, value: float | str) -> str:
         return f"Rs {float(value):,.0f}"

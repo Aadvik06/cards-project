@@ -61,6 +61,7 @@ class QuoteInput:
     merchant_name: str | None = None
     description: str | None = None
     discount_rate: Decimal = Decimal("0")
+    voucher_face_value: Decimal | None = None
 
 
 @dataclass(frozen=True)

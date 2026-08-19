@@ -6,6 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterator
+from uuid import uuid4
 
 from app.domain.enums import TravelType
 from app.domain.models import (
@@ -112,6 +113,7 @@ class AuditLedger:
                     merchant_name=quote.get("merchant_name"),
                     description=quote.get("description"),
                     discount_rate=Decimal(quote["discount_rate"]),
+                    voucher_face_value=Decimal(quote["voucher_face_value"]) if quote.get("voucher_face_value") else None,
                 )
                 for quote in json.loads(row["quotes_json"])
             ],
@@ -207,6 +209,60 @@ class AuditLedger:
             )
             return cursor.rowcount > 0
 
+    def save_draft(
+        self,
+        *,
+        draft_id: str | None,
+        title: str,
+        travel_type: str,
+        current_step: int,
+        data: dict[str, Any],
+        created_by: str | None = None,
+    ) -> dict[str, Any]:
+        now = datetime.now().isoformat()
+        draft_id = draft_id or str(uuid4())
+        with self._connect() as connection:
+            connection.execute(
+                self._upsert_draft_sql(),
+                (
+                    draft_id,
+                    title,
+                    travel_type,
+                    current_step,
+                    json.dumps(data),
+                    created_by,
+                    now,
+                    now,
+                ),
+            )
+        draft = self.get_draft(draft_id)
+        if draft is None:
+            raise RuntimeError("Draft could not be saved.")
+        return draft
+
+    def read_drafts(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM drafts ORDER BY updated_at DESC"
+            ).fetchall()
+        return [self._dict(row) for row in rows]
+
+    def get_draft(self, draft_id: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                self._sql("SELECT * FROM drafts WHERE id = ?"),
+                (draft_id,),
+            ).fetchone()
+        return self._dict(row) if row is not None else None
+
+    def delete_draft(self, draft_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                self._sql("DELETE FROM drafts WHERE id = ?"),
+                (draft_id,),
+            )
+            return cursor.rowcount > 0
+
     def monthly_transactions(self, year: int, month: int) -> list[dict[str, Any]]:
         rows = []
         for row in self.read_transactions():
@@ -296,8 +352,35 @@ class AuditLedger:
         return """
             INSERT OR REPLACE INTO decisions (
                 recommendation_id, accepted, selected_option_id, selected_card_id,
-                selected_vendor_id, decline_reason, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            selected_vendor_id, decline_reason, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """
+
+    def _upsert_draft_sql(self) -> str:
+        if self.database_url:
+            return """
+                INSERT INTO drafts (
+                    id, title, travel_type, current_step, data_json, created_by, created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    title = EXCLUDED.title,
+                    travel_type = EXCLUDED.travel_type,
+                    current_step = EXCLUDED.current_step,
+                    data_json = EXCLUDED.data_json,
+                    created_by = EXCLUDED.created_by,
+                    updated_at = EXCLUDED.updated_at
+                """
+        return """
+            INSERT INTO drafts (
+                id, title, travel_type, current_step, data_json, created_by, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                travel_type = excluded.travel_type,
+                current_step = excluded.current_step,
+                data_json = excluded.data_json,
+                created_by = excluded.created_by,
+                updated_at = excluded.updated_at
             """
 
     def _run_schema(self, connection: Any) -> None:
@@ -372,6 +455,18 @@ class AuditLedger:
                 FOREIGN KEY (recommendation_id) REFERENCES recommendations(id)
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS drafts (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                travel_type TEXT NOT NULL,
+                current_step INTEGER NOT NULL,
+                data_json TEXT NOT NULL,
+                created_by TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
         ]
         for statement in statements:
             connection.execute(statement)
@@ -383,6 +478,7 @@ class AuditLedger:
             "merchant_name": quote.merchant_name,
             "description": quote.description,
             "discount_rate": str(quote.discount_rate),
+            "voucher_face_value": str(quote.voucher_face_value) if quote.voucher_face_value is not None else None,
         }
 
     def _ensure_column(
@@ -475,4 +571,6 @@ class AuditLedger:
         value = dict(row)
         if "details_json" in value:
             value["details"] = json.loads(value["details_json"] or "{}")
+        if "data_json" in value:
+            value["data"] = json.loads(value["data_json"] or "{}")
         return value

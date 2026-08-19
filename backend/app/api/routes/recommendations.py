@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.api.dependencies import (
     get_monthly_log_service,
@@ -10,6 +10,8 @@ from app.core.errors import OptimizerError
 from app.schemas.recommendation import (
     DecisionRequest,
     DecisionResponse,
+    DraftResponse,
+    DraftSaveRequest,
     FinalizeTransactionRequest,
     RecommendationCreateRequest,
     RecommendationResponse,
@@ -100,6 +102,40 @@ def delete_transaction(transaction_id: str) -> dict:
     if not deleted:
         raise HTTPException(status_code=404, detail="Transaction not found.")
     return {"deleted": True, "transaction_id": transaction_id}
+
+
+@router.get("/drafts", response_model=list[DraftResponse])
+def get_drafts() -> list[dict]:
+    return get_recommendation_service().ledger.read_drafts()
+
+
+@router.post("/drafts", response_model=DraftResponse)
+def save_draft(payload: DraftSaveRequest, request: Request) -> dict:
+    created_by = getattr(request.state, "user_email", None)
+    return get_recommendation_service().ledger.save_draft(
+        draft_id=payload.id,
+        title=payload.title,
+        travel_type=payload.travel_type,
+        current_step=payload.current_step,
+        data=payload.data,
+        created_by=created_by,
+    )
+
+
+@router.get("/drafts/{draft_id}", response_model=DraftResponse)
+def get_draft(draft_id: str) -> dict:
+    draft = get_recommendation_service().ledger.get_draft(draft_id)
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Draft not found.")
+    return draft
+
+
+@router.delete("/drafts/{draft_id}")
+def delete_draft(draft_id: str) -> dict:
+    deleted = get_recommendation_service().ledger.delete_draft(draft_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Draft not found.")
+    return {"deleted": True, "draft_id": draft_id}
 
 
 @router.get("/logs/summary")

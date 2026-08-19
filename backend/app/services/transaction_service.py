@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from app.core.decimal_math import money, points
+from app.core.decimal_math import money, non_negative, points
 from app.core.errors import InvalidDecisionError
 from app.domain.cap_tracker import remaining_bonus_cap
 from app.domain.enums import TravelType
@@ -84,6 +84,19 @@ class TransactionService:
             self.recommendation_service.ledger.append_transaction(transaction)
             return transaction
 
+        if self._is_amex_voucher_vendor(selected_card_id, selected_vendor_id, details or {}):
+            transaction = self._finalize_amex_voucher_split(
+                recommendation=recommendation,
+                selected_card_id=selected_card_id,
+                selected_vendor_id=selected_vendor_id,
+                final_amount_paid=final_amount_paid,
+                discount_rate=original_option.discount_rate,
+                paid_at=paid_at,
+                details=details or {},
+            )
+            self.recommendation_service.ledger.append_transaction(transaction)
+            return transaction
+
         final_quote = QuoteInput(
             vendor_id=selected_vendor_id,
             amount=final_amount_paid,
@@ -120,6 +133,72 @@ class TransactionService:
         )
         self.recommendation_service.ledger.append_transaction(transaction)
         return transaction
+
+    def _is_amex_voucher_vendor(self, card_id: str, vendor_id: str, details: dict) -> bool:
+        if card_id != "amex":
+            return False
+        if (
+            "voucher_purchase_amount_paid" not in details
+            and "card_balance_paid" not in details
+            and "voucher_amount_paid" not in details
+            and "cash_amount_paid" not in details
+        ):
+            return False
+        return ("amex", vendor_id) in self.recommendation_service.engine.voucher_rules
+
+    def _finalize_amex_voucher_split(
+        self,
+        *,
+        recommendation: Recommendation,
+        selected_card_id: str,
+        selected_vendor_id: str,
+        final_amount_paid: Decimal,
+        discount_rate: Decimal,
+        paid_at: datetime,
+        details: dict,
+    ) -> TransactionRecord:
+        card = next(card for card in self.recommendation_service.cards if card.id == selected_card_id)
+        voucher_face_value = money(Decimal(str(details.get("voucher_face_value_used") or details.get("voucher_amount_paid") or "0")))
+        voucher_purchase_amount = money(
+            Decimal(str(details.get("voucher_purchase_amount_paid") or details.get("voucher_amount_paid") or "0"))
+        )
+        card_balance = money(Decimal(str(details.get("card_balance_paid") or details.get("cash_amount_paid") or "0")))
+        checkout_value = money(voucher_face_value + card_balance)
+        split_total = money(voucher_purchase_amount + card_balance)
+        if split_total != money(final_amount_paid):
+            raise InvalidDecisionError("Voucher purchase cost and direct card balance must add up to the final amount paid.")
+
+        if "checkout_value" not in details:
+            details["checkout_value"] = str(checkout_value)
+
+        usage = self.recommendation_service.cap_usage.usage_for(paid_at.date()).get(
+            card.id,
+            UsageSnapshot(),
+        )
+        base_points = split_total * card.base_rate
+        voucher_base_points = voucher_purchase_amount * card.base_rate
+        raw_bonus_points = non_negative((voucher_base_points * card.multiplier_for(recommendation.travel_type)) - voucher_base_points)
+        awarded_bonus_points = min(raw_bonus_points, remaining_bonus_cap(card, usage))
+        total_points = base_points + awarded_bonus_points
+        points_value_rupees = total_points * card.point_value_rupees
+
+        return TransactionRecord(
+            id=str(uuid4()),
+            recommendation_id=recommendation.id,
+            employee_id=recommendation.employee_id,
+            travel_type=recommendation.travel_type,
+            card_id=selected_card_id,
+            vendor_id=selected_vendor_id,
+            final_amount_paid=split_total,
+            discount_rate=discount_rate,
+            base_points=points(base_points),
+            bonus_points=points(awarded_bonus_points),
+            total_points=points(total_points),
+            points_value_rupees=money(points_value_rupees),
+            net_cost=money(split_total - points_value_rupees),
+            paid_at=paid_at,
+            details=details,
+        )
 
     def log_voucher_purchase(
         self,

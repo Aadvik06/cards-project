@@ -2,6 +2,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from app.core.decimal_math import money, non_negative, points
+from app.core.errors import OptimizerError
 from app.domain.cap_tracker import remaining_bonus_cap
 from app.domain.enums import TravelType
 from app.domain.models import (
@@ -12,6 +13,9 @@ from app.domain.models import (
     Vendor,
     VoucherRule,
 )
+
+
+VOUCHER_FACE_VALUE_INCREMENT = Decimal("10000")
 
 
 class RewardCalculator:
@@ -30,8 +34,13 @@ class RewardCalculator:
         cash_component = Decimal("0")
 
         if voucher_rule is not None:
-            eligible_amount = min(quote.amount, voucher_rule.transaction_cap)
-            cash_component = non_negative(quote.amount - voucher_rule.transaction_cap)
+            inferred_voucher_value = (quote.amount // VOUCHER_FACE_VALUE_INCREMENT) * VOUCHER_FACE_VALUE_INCREMENT
+            eligible_amount = quote.voucher_face_value if quote.voucher_face_value is not None else inferred_voucher_value
+            if eligible_amount > quote.amount:
+                raise OptimizerError("Voucher value cannot be higher than the booking price.")
+            if eligible_amount > voucher_rule.transaction_cap:
+                raise OptimizerError("Voucher value is higher than the allowed voucher cap for this vendor.")
+            cash_component = non_negative(quote.amount - eligible_amount)
 
         discounted_eligible_amount = eligible_amount * (Decimal("1") - quote.discount_rate)
         price_after_discount = discounted_eligible_amount + cash_component
@@ -78,4 +87,3 @@ class RewardCalculator:
                 f"minus rupee value of points. {cap_note}"
             ),
         )
-

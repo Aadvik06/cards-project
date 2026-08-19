@@ -6,7 +6,7 @@
     <title>PreciseHub</title>
     <link rel="apple-touch-icon" sizes="180x180" href="/static/assets/apple-touch-icon.png?v=20260817" />
     <link rel="icon" type="image/png" href="/static/assets/favicon.png?v=20260817" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260817-inbound-disable-fix" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260818-multiple-drafts" />
   </head>
   <body class="auth-pending">
     <section class="auth-screen is-hidden" id="authGate">
@@ -54,6 +54,7 @@
       </div>
       <div class="top-actions">
         <button class="tab-button is-active" id="bookingTab" type="button">Booking</button>
+        <button class="tab-button" id="draftsTab" type="button">Drafts</button>
         <button class="tab-button" id="transactionsTab" type="button">Past transactions</button>
         <button class="secondary compact is-hidden" id="logoutButton" type="button">Logout</button>
         <div class="status-pill" id="saveStatus">Ready</div>
@@ -118,9 +119,6 @@
               <strong>Voucher</strong>
               <small>Track Amex voucher points without optimization.</small>
             </button>
-          </div>
-          <div class="actions">
-            <button class="secondary" id="loadDraft" type="button">Load saved draft</button>
           </div>
         </section>
 
@@ -221,6 +219,23 @@
                 <input id="paidAt" type="datetime-local" />
               </label>
             </div>
+            <div class="split-payment-box is-hidden" id="amexSplitBox">
+              <h3>American Express voucher payment details</h3>
+              <div class="form-grid">
+                <label>
+                  Voucher value used
+                  <input id="voucherFaceValueUsed" type="number" min="0" step="0.01" />
+                </label>
+                <label>
+                  Voucher purchase cost
+                  <input id="voucherPurchaseAmountPaid" type="number" min="0" step="0.01" />
+                </label>
+                <label>
+                  Balance paid directly by card
+                  <input id="cardBalancePaid" type="number" min="0" step="0.01" />
+                </label>
+              </div>
+            </div>
             <label>
               Description
               <textarea id="finalDescription" rows="4" required placeholder="Write what was booked and any checkout changes."></textarea>
@@ -271,11 +286,19 @@
         <div class="card-split-grid" id="cardSplit"></div>
         <div class="transaction-list" id="transactionList"></div>
       </section>
+
+      <section class="panel is-hidden" id="draftsView">
+        <div class="section-head">
+          <p class="eyebrow">Saved work</p>
+          <h2>Draft bookings</h2>
+        </div>
+        <div class="draft-list" id="draftList"></div>
+      </section>
     </main>
 
     <div class="toast is-hidden" id="toast"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="/static/app.js?v=20260817-inbound-disable-fix"></script>
+    <script src="/static/app.js?v=20260818-multiple-drafts"></script>
   </body>
 </html>

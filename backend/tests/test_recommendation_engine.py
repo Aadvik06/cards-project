@@ -224,6 +224,90 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertTrue(self.ledger.delete_transaction(transaction.id))
         self.assertEqual(0, len(self.ledger.read_transactions()))
 
+    def test_multiple_drafts_are_saved_in_database(self) -> None:
+        drafts = [
+            self.ledger.save_draft(
+                draft_id=None,
+                title=f"Flight draft {index}",
+                travel_type="flight",
+                current_step=2,
+                data={"values": {"employeeName": "Ava", "draftNumber": index}},
+                created_by="ava@example.com",
+            )
+            for index in range(1, 11)
+        ]
+
+        self.assertEqual(10, len({draft["id"] for draft in drafts}))
+        self.assertEqual(10, len(self.ledger.read_drafts()))
+        self.assertEqual("Flight draft 1", self.ledger.get_draft(drafts[0]["id"])["title"])
+        self.assertTrue(self.ledger.delete_draft(drafts[-1]["id"]))
+        self.assertEqual(9, len(self.ledger.read_drafts()))
+
+    def test_amex_travel_voucher_discount_uses_purchase_cost_and_card_balance(self) -> None:
+        recommendation = self.recommendations.create_recommendation(
+            employee_id="emp-amex",
+            travel_type=TravelType.FLIGHT,
+            quotes=[
+                QuoteInput(
+                    "amex_mmt_flight_voucher",
+                    Decimal("10001"),
+                    discount_rate=Decimal("0.02"),
+                    voucher_face_value=Decimal("10000"),
+                )
+            ],
+        )
+        selected = recommendation.ranked_options[0]
+
+        self.assertEqual(Decimal("10000.00"), selected.eligible_amount)
+        self.assertEqual(Decimal("1.00"), selected.cash_component)
+        self.assertEqual(Decimal("9801.00"), selected.price_after_discount)
+        self.assertEqual(Decimal("294.0300"), selected.base_points)
+        self.assertEqual(Decimal("2646.0000"), selected.awarded_bonus_points)
+        self.assertEqual(Decimal("2940.0300"), selected.total_points)
+
+        transaction = self.transactions.finalize_transaction(
+            recommendation_id=recommendation.id,
+            selected_option_id=selected.id,
+            final_amount_paid=Decimal("9801"),
+            paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            details={
+                "description": "Amex discounted voucher plus card balance.",
+                "voucher_face_value_used": "10000",
+                "voucher_purchase_amount_paid": "9800",
+                "card_balance_paid": "1",
+            },
+        )
+
+        self.assertEqual(Decimal("9801.00"), transaction.final_amount_paid)
+        self.assertEqual(Decimal("294.0300"), transaction.base_points)
+        self.assertEqual(Decimal("2646.0000"), transaction.bonus_points)
+        self.assertEqual(Decimal("2940.0300"), transaction.total_points)
+
+    def test_amex_travel_voucher_split_awards_bonus_only_on_voucher_purchase_cost(self) -> None:
+        recommendation = self.recommendations.create_recommendation(
+            employee_id="emp-amex",
+            travel_type=TravelType.FLIGHT,
+            quotes=[QuoteInput("amex_mmt_flight_voucher", Decimal("12000"))],
+        )
+        selected = recommendation.ranked_options[0]
+
+        transaction = self.transactions.finalize_transaction(
+            recommendation_id=recommendation.id,
+            selected_option_id=selected.id,
+            final_amount_paid=Decimal("12000"),
+            paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            details={
+                "description": "Amex voucher split.",
+                "voucher_face_value_used": "10000",
+                "voucher_purchase_amount_paid": "10000",
+                "card_balance_paid": "2000",
+            },
+        )
+
+        self.assertEqual(Decimal("360.0000"), transaction.base_points)
+        self.assertEqual(Decimal("2700.0000"), transaction.bonus_points)
+        self.assertEqual(Decimal("3060.0000"), transaction.total_points)
+
 
 if __name__ == "__main__":
     unittest.main()

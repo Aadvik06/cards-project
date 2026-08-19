@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -19,6 +20,7 @@ class QuoteRequest(BaseModel):
     merchant_name: str | None = None
     description: str | None = None
     discount_rate: Decimal = Field(default=Decimal("0"), ge=0)
+    voucher_face_value: Decimal | None = Field(default=None, ge=0)
 
     def to_domain(self) -> QuoteInput:
         return QuoteInput(
@@ -27,6 +29,7 @@ class QuoteRequest(BaseModel):
             merchant_name=self.merchant_name,
             description=self.description,
             discount_rate=self.discount_rate,
+            voucher_face_value=self.voucher_face_value,
         )
 
 
@@ -131,7 +134,7 @@ class FinalizeTransactionRequest(BaseModel):
     selected_card_id: str | None = None
     selected_vendor_id: str | None = None
     paid_at: datetime | None = None
-    details: dict[str, str] = Field(default_factory=dict)
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class VoucherLogRequest(BaseModel):
@@ -157,10 +160,29 @@ class TransactionResponse(BaseModel):
     points_value_rupees: Decimal
     net_cost: Decimal
     paid_at: datetime
-    details: dict[str, str] = Field(default_factory=dict)
+    details: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     transaction_logged: bool = True
 
     @classmethod
     def from_domain(cls, transaction: TransactionRecord) -> "TransactionResponse":
         return cls(**transaction.__dict__)
+
+
+class DraftSaveRequest(BaseModel):
+    id: str | None = None
+    title: str = Field(min_length=1)
+    travel_type: str
+    current_step: int = Field(default=1, ge=1, le=4)
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class DraftResponse(BaseModel):
+    id: str
+    title: str
+    travel_type: str
+    current_step: int
+    data: dict[str, Any]
+    created_by: str | None = None
+    created_at: datetime
+    updated_at: datetime

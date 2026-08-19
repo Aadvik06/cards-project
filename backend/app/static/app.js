@@ -18,14 +18,32 @@ const vendorsByType = {
   ],
 };
 
-const draftKey = "cardsProjectDraft";
 const state = {
   travelType: null,
   recommendation: null,
   selectedOption: null,
   pendingDeclineOption: null,
+  currentDraftId: null,
   highestStep: 1,
 };
+
+const noDiscountVendors = new Set([
+  "hdfc_smartbuy_flight",
+  "hdfc_smartbuy_hotel",
+  "icici_ishop_flight",
+  "icici_ishop_hotel",
+  "travel_agent_flight",
+  "travel_agent_hotel",
+]);
+
+const amexTravelVoucherVendors = new Set([
+  "amex_mmt_flight_voucher",
+  "amex_cleartrip_generic_voucher",
+  "amex_goibibo_hotel_voucher",
+  "amex_easemytrip_hotel_voucher",
+  "amex_mmt_hotel_voucher",
+  "amex_cleartrip_hotel_voucher",
+]);
 
 const auth = {
   enabled: false,
@@ -53,11 +71,34 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 function timePicker(id) {
-  return `<input id="${id}" class="time-picker" type="time" step="900" />`;
+  return splitPicker(id, 23, "Hour", "Min");
 }
 
 function durationPicker(id) {
-  return `<input id="${id}" class="time-picker duration-picker" type="time" step="900" min="00:00" max="23:45" />`;
+  return splitPicker(id, 48, "Hours", "Minutes");
+}
+
+function splitPicker(id, maxHours, hourLabel, minuteLabel) {
+  return `
+    <input id="${id}" type="hidden" />
+    <div class="split-picker" data-picker-target="${id}">
+      <select data-picker-hour aria-label="${hourLabel}">
+        ${numberOptions(0, maxHours, hourLabel)}
+      </select>
+      <select data-picker-minute aria-label="${minuteLabel}">
+        ${numberOptions(0, 59, minuteLabel)}
+      </select>
+    </div>
+  `;
+}
+
+function numberOptions(start, end, emptyLabel) {
+  const options = [`<option value="">${emptyLabel}</option>`];
+  for (let value = start; value <= end; value += 1) {
+    const text = String(value).padStart(2, "0");
+    options.push(`<option value="${text}">${text}</option>`);
+  }
+  return options.join("");
 }
 
 function cabinClassSelect(id) {
@@ -144,8 +185,10 @@ function updateLayoverControls(select) {
     const field = document.getElementById(id);
     if (!field) return;
     field.disabled = disabled;
+    setSplitPickerDisabled(id, disabled);
     if (disabled) field.value = "";
   });
+  refreshSplitPickers();
 }
 
 function setupLayoverControls() {
@@ -159,6 +202,45 @@ function refreshLayoverControls() {
   $$("[data-layover-targets]").forEach((select) => updateLayoverControls(select));
 }
 
+function syncSplitPicker(picker) {
+  const target = document.getElementById(picker.dataset.pickerTarget);
+  const hour = picker.querySelector("[data-picker-hour]")?.value || "";
+  const minute = picker.querySelector("[data-picker-minute]")?.value || "";
+  if (!target) return;
+  target.value = hour && minute ? `${hour}:${minute}` : "";
+}
+
+function setSplitPickerDisabled(targetId, disabled) {
+  const picker = document.querySelector(`[data-picker-target="${targetId}"]`);
+  if (!picker) return;
+  picker.querySelectorAll("select").forEach((field) => {
+    field.disabled = disabled;
+    if (disabled) field.value = "";
+  });
+}
+
+function refreshSplitPicker(picker) {
+  const target = document.getElementById(picker.dataset.pickerTarget);
+  const [hour = "", minute = ""] = String(target?.value || "").split(":");
+  const hourField = picker.querySelector("[data-picker-hour]");
+  const minuteField = picker.querySelector("[data-picker-minute]");
+  if (hourField) hourField.value = hour;
+  if (minuteField) minuteField.value = minute;
+}
+
+function setupSplitPickers() {
+  $$("[data-picker-target]").forEach((picker) => {
+    refreshSplitPicker(picker);
+    picker.querySelectorAll("select").forEach((field) => {
+      field.addEventListener("change", () => syncSplitPicker(picker));
+    });
+  });
+}
+
+function refreshSplitPickers() {
+  $$("[data-picker-target]").forEach((picker) => refreshSplitPicker(picker));
+}
+
 function updateTripTypeControls() {
   if (state.travelType !== "flight") return;
   const isOneWay = $("#flightTripType")?.value === "One way";
@@ -170,9 +252,11 @@ function updateTripTypeControls() {
     section.classList.toggle("is-disabled", isOneWay);
     section.querySelectorAll("input, select").forEach((field) => {
       field.disabled = isOneWay;
+      setSplitPickerDisabled(field.id, isOneWay);
       if (isOneWay) field.value = "";
     });
   });
+  refreshSplitPickers();
   refreshLayoverControls();
 }
 
@@ -196,8 +280,10 @@ const stepNumber = { trip: 1, prices: 2, recommendation: 3, finalize: 4, done: 4
 function showBookingPanel(name) {
   $("#bookingView").classList.remove("is-hidden");
   $("#transactionsView").classList.add("is-hidden");
+  $("#draftsView").classList.add("is-hidden");
   $("#bookingTab").classList.add("is-active");
   $("#transactionsTab").classList.remove("is-active");
+  $("#draftsTab").classList.remove("is-active");
 
   Object.values(panels).forEach((panel) => panel.classList.add("is-hidden"));
   panels[name].classList.remove("is-hidden");
@@ -435,6 +521,10 @@ function formatCardName(cardIdOrName) {
   return cardNames[cardIdOrName] || cardIdOrName || "";
 }
 
+function formatTravelType(value) {
+  return String(value || "").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replaceAll("&", "&amp;")
@@ -481,6 +571,7 @@ function today() {
 
 function setupTabs() {
   $("#bookingTab").addEventListener("click", () => showBookingPanel("trip"));
+  $("#draftsTab").addEventListener("click", loadDrafts);
   $("#transactionsTab").addEventListener("click", loadTransactions);
 }
 
@@ -502,6 +593,11 @@ function setupTripChoices() {
   $$(".choice-card").forEach((button) => {
     button.addEventListener("click", () => {
       state.travelType = button.dataset.travelType;
+      state.recommendation = null;
+      state.selectedOption = null;
+      state.pendingDeclineOption = null;
+      state.currentDraftId = null;
+      state.highestStep = 1;
       $("#travelDate").value = today();
       $("#priceTitle").textContent = titleForType();
       updateFlightOnlyFields();
@@ -578,6 +674,8 @@ function renderVendorRows() {
 
   vendorsByType[state.travelType].forEach((vendor) => {
     const row = document.createElement("div");
+    const isVoucherVendor = isAmexTravelVoucherVendor(vendor.id);
+    const priceLabel = state.travelType === "flight" ? "Flight price" : "Hotel price";
     row.className = `vendor-row ${state.travelType === "flight" ? "flight-vendor-row" : ""} ${state.travelType === "hotel" ? "hotel-vendor-row" : ""}`;
     row.innerHTML = `
       <div class="vendor-title">
@@ -586,11 +684,17 @@ function renderVendorRows() {
       </div>
       <div class="vendor-fields ${state.travelType === "flight" ? "flight-fields" : ""} ${state.travelType === "hotel" ? "hotel-fields" : ""}">
         <label>
-          Price
+          ${isVoucherVendor ? priceLabel : "Price"}
           <input inputmode="decimal" min="0" step="0.01" type="number" data-vendor-amount="${vendor.id}" placeholder="0" />
         </label>
+        ${isVoucherVendor ? `
+          <label>
+            Voucher value
+            <input inputmode="decimal" min="0" step="0.01" type="number" data-vendor-voucher="${vendor.id}" placeholder="0" />
+          </label>
+        ` : ""}
         <label>
-          Discount %
+          ${isVoucherVendor ? "Voucher discount %" : "Discount %"}
           <input
             inputmode="decimal"
             min="0"
@@ -599,7 +703,7 @@ function renderVendorRows() {
             type="number"
             data-vendor-discount="${vendor.id}"
             placeholder="0"
-            ${vendor.isAgent ? "value=\"0\" disabled" : ""}
+            ${noDiscountVendors.has(vendor.id) ? "value=\"0\" disabled" : ""}
           />
         </label>
         ${vendorDetailFields(vendor)}
@@ -607,6 +711,7 @@ function renderVendorRows() {
     `;
     vendorList.appendChild(row);
   });
+  setupSplitPickers();
   setupLayoverControls();
   setupTripTypeControls();
 }
@@ -724,14 +829,23 @@ function collectQuotes() {
   vendorsByType[state.travelType].forEach((vendor) => {
     const amountInput = document.querySelector(`[data-vendor-amount="${vendor.id}"]`);
     const discountInput = document.querySelector(`[data-vendor-discount="${vendor.id}"]`);
+    const voucherInput = document.querySelector(`[data-vendor-voucher="${vendor.id}"]`);
     const amount = Number(amountInput.value);
-    const discountPercent = Number(discountInput?.value || 0);
+    const discountPercent = noDiscountVendors.has(vendor.id) ? 0 : Number(discountInput?.value || 0);
+    const voucherFaceValue = Number(voucherInput?.value || 0);
 
     if (amount > 0) {
+      if (isAmexTravelVoucherVendor(vendor.id) && voucherFaceValue <= 0) {
+        throw new Error("Enter the voucher value for each Amex voucher option with a price.");
+      }
+      if (isAmexTravelVoucherVendor(vendor.id) && voucherFaceValue > amount) {
+        throw new Error("Voucher value cannot be higher than the booking price.");
+      }
       quotes.push({
         vendor_id: vendor.id,
         amount: String(amount),
         discount_rate: String(discountPercent / 100),
+        voucher_face_value: isAmexTravelVoucherVendor(vendor.id) ? String(voucherFaceValue) : null,
       });
     }
   });
@@ -841,13 +955,12 @@ function setupQuoteForm() {
       return;
     }
 
-    const quotes = collectQuotes();
-    if (quotes.length === 0) {
-      showToast("Enter at least one price.", true);
-      return;
-    }
-
     try {
+      const quotes = collectQuotes();
+      if (quotes.length === 0) {
+        showToast("Enter at least one price.", true);
+        return;
+      }
       setStatus("Calculating");
       const recommendation = await postJson("/recommendations", {
         employee_name: $("#employeeName").value.trim() || null,
@@ -930,6 +1043,7 @@ function optionCard(option, isBest) {
     ? `<button class="primary" type="button" data-accept-option="${option.id}">${isBankTransfer ? "Use this option" : "Use this card"}</button>`
     : `<button class="secondary" type="button" data-decline-option="${option.id}">Choose this instead</button>`;
   const netCostLabel = isBankTransfer ? "Net cost" : "Net cost after points";
+  const voucherMath = voucherMathDetails(option);
 
   return `
     <article class="option-card ${isBest ? "best" : ""} ${isBankTransfer ? "bank-transfer-option" : ""}">
@@ -943,6 +1057,7 @@ function optionCard(option, isBest) {
         ${button}
       </div>
       ${optionDecisionDetails(option)}
+      ${voucherMath}
       <div class="metric-grid">
         <div class="metric feature"><span>Cash to pay</span><strong>${formatMoney(option.price_after_discount)}</strong></div>
         <div class="metric"><span>${netCostLabel}</span><strong>${formatMoney(option.net_cost)}</strong></div>
@@ -950,6 +1065,20 @@ function optionCard(option, isBest) {
         <div class="metric"><span>Point value</span><strong>${formatMoney(option.points_value_rupees)}</strong></div>
       </div>
     </article>
+  `;
+}
+
+function voucherMathDetails(option) {
+  if (!isAmexTravelVoucherOption(option)) return "";
+  const voucherFaceValue = Number(option.eligible_amount || 0);
+  const directCardBalance = Number(option.cash_component || 0);
+  const voucherPurchaseCost = Math.max(Number(option.price_after_discount || 0) - directCardBalance, 0);
+  return `
+    <div class="option-detail-grid voucher-math-grid">
+      <div class="option-detail"><span>Voucher value used</span><strong>${formatMoney(voucherFaceValue)}</strong></div>
+      <div class="option-detail"><span>Voucher purchase cost</span><strong>${formatMoney(voucherPurchaseCost)}</strong></div>
+      <div class="option-detail"><span>Direct card balance</span><strong>${formatMoney(directCardBalance)}</strong></div>
+    </div>
   `;
 }
 
@@ -1028,6 +1157,13 @@ function comparisonRowValue(option, rowKey) {
   if (rowKey === "Hotel") return $(`#${option.vendor_id}_hotel`)?.value;
   if (rowKey === "Check-in time") return $(`#${option.vendor_id}_check_in_time`)?.value;
   if (rowKey === "Check-out time") return $(`#${option.vendor_id}_check_out_time`)?.value;
+  if (rowKey === "Voucher value") return isAmexTravelVoucherOption(option) ? formatMoney(option.eligible_amount) : "-";
+  if (rowKey === "Voucher purchase cost") {
+    return isAmexTravelVoucherOption(option)
+      ? formatMoney(Math.max(Number(option.price_after_discount || 0) - Number(option.cash_component || 0), 0))
+      : "-";
+  }
+  if (rowKey === "Direct card balance") return isAmexTravelVoucherOption(option) ? formatMoney(option.cash_component) : "-";
   if (rowKey === "Cash to pay") return formatMoney(option.price_after_discount);
   if (rowKey === "Net cost") return formatMoney(option.net_cost);
   if (rowKey === "Total points") return formatNumber(option.total_points);
@@ -1057,11 +1193,11 @@ function setupChoicePdf() {
       ...(state.travelType === "flight" ? ["Airline", "Outbound flight", "Inbound flight"] : []),
       ...(state.travelType === "hotel" ? ["Hotel", "Check-in time", "Check-out time"] : []),
       "Cash to pay",
-      "Net cost",
       "Total points",
       "Point value",
+      "Net cost",
     ].map((label) => `
-      <tr>
+      <tr class="${label === "Net cost" ? "net-cost-row" : ""}">
         <th>${escapeHtml(label)}</th>
         ${options.map((option) => `<td>${detailValue(comparisonRowValue(option, label))}</td>`).join("")}
       </tr>
@@ -1082,7 +1218,7 @@ function setupChoicePdf() {
         <head>
           <title>PreciseHub Travel Choices</title>
           <style>
-            @page { size: A4 portrait; margin: 9mm; }
+            @page { size: A4 landscape; margin: 8mm; }
             * { box-sizing: border-box; }
             body {
               background: #ffffff;
@@ -1192,6 +1328,10 @@ function setupChoicePdf() {
               font-size: 8px;
               line-height: 1.15;
             }
+            .net-cost-row td {
+              color: #0a4d3f;
+              font-weight: 700;
+            }
           </style>
         </head>
         <body>
@@ -1291,12 +1431,34 @@ function setupDeclineActions() {
 
 function renderFinalize() {
   const option = state.selectedOption;
+  const usesVoucherSplit = isAmexTravelVoucherOption(option);
   $("#selectedSummary").innerHTML = `
     <strong>${option.card_name}</strong>
     <span>${option.vendor_name}</span>
     <span>Expected amount: ${formatMoney(option.price_after_discount)}</span>
   `;
   $("#finalAmount").value = Number(option.price_after_discount).toFixed(2);
+  $("#amexSplitBox").classList.toggle("is-hidden", !usesVoucherSplit);
+  ["#voucherFaceValueUsed", "#voucherPurchaseAmountPaid", "#cardBalancePaid"].forEach((selector) => {
+    $(selector).required = usesVoucherSplit;
+    if (!usesVoucherSplit) $(selector).value = "";
+  });
+  if (usesVoucherSplit) {
+    const voucherFaceValue = Number(option.eligible_amount || 0);
+    const cardBalance = Number(option.cash_component || 0);
+    const voucherPurchaseAmount = Math.max(Number(option.price_after_discount || 0) - cardBalance, 0);
+    $("#voucherFaceValueUsed").value = voucherFaceValue.toFixed(2);
+    $("#voucherPurchaseAmountPaid").value = voucherPurchaseAmount.toFixed(2);
+    $("#cardBalancePaid").value = cardBalance.toFixed(2);
+  }
+}
+
+function isAmexTravelVoucherOption(option) {
+  return Boolean(option?.card_id === "amex" && amexTravelVoucherVendors.has(option.vendor_id));
+}
+
+function isAmexTravelVoucherVendor(vendorId) {
+  return amexTravelVoucherVendors.has(vendorId);
 }
 
 function setupFinalForm() {
@@ -1307,6 +1469,20 @@ function setupFinalForm() {
     if (!details.description) {
       showToast("Add a short description before saving.", true);
       return;
+    }
+    if (isAmexTravelVoucherOption(state.selectedOption)) {
+      const voucherFaceValue = Number($("#voucherFaceValueUsed").value || 0);
+      const voucherPurchaseAmount = Number($("#voucherPurchaseAmountPaid").value || 0);
+      const cardBalance = Number($("#cardBalancePaid").value || 0);
+      const finalAmount = Number($("#finalAmount").value || 0);
+      if (Math.abs((voucherPurchaseAmount + cardBalance) - finalAmount) > 0.01) {
+        showToast("Voucher purchase cost and direct card balance must add up to the final amount paid.", true);
+        return;
+      }
+      details.voucher_face_value_used = $("#voucherFaceValueUsed").value || "0";
+      details.voucher_purchase_amount_paid = $("#voucherPurchaseAmountPaid").value || "0";
+      details.card_balance_paid = $("#cardBalancePaid").value || "0";
+      details.checkout_value = (voucherFaceValue + cardBalance).toFixed(2);
     }
 
     try {
@@ -1327,7 +1503,10 @@ function setupFinalForm() {
             details,
           });
       renderDone(transaction);
-      localStorage.removeItem(draftKey);
+      if (state.currentDraftId) {
+        deleteJson(`/drafts/${state.currentDraftId}`).catch(() => {});
+        state.currentDraftId = null;
+      }
       setStatus("Saved");
       showBookingPanel("done");
     } catch (error) {
@@ -1338,25 +1517,78 @@ function setupFinalForm() {
 }
 
 function renderDone(transaction) {
+  const details = transaction.details || {};
+  const splitLine = details.voucher_purchase_amount_paid || details.card_balance_paid || details.voucher_amount_paid || details.cash_amount_paid
+    ? `<div class="metric"><span>Voucher/card split</span><strong>${formatMoney(details.voucher_purchase_amount_paid || details.voucher_amount_paid || 0)} / ${formatMoney(details.card_balance_paid || details.cash_amount_paid || 0)}</strong></div>`
+    : "";
   $("#savedDetails").innerHTML = `
     <div class="metric-grid">
       <div class="metric"><span>Final amount</span><strong>${formatMoney(transaction.final_amount_paid)}</strong></div>
       <div class="metric"><span>Points</span><strong>${formatNumber(transaction.total_points)}</strong></div>
       <div class="metric"><span>Net cost</span><strong>${formatMoney(transaction.net_cost)}</strong></div>
       <div class="metric"><span>Status</span><strong>Logged</strong></div>
+      ${splitLine}
     </div>
   `;
 }
 
+function currentPanelName() {
+  return Object.entries(panels).find(([, panel]) => !panel.classList.contains("is-hidden"))?.[0] || "trip";
+}
+
+function draftTitle() {
+  if (state.travelType === "flight") {
+    const route = [$("#fromCity")?.value, $("#toCity")?.value].filter(Boolean).join(" to ");
+    return route ? `Flight - ${route}` : "Flight booking";
+  }
+  if (state.travelType === "hotel") {
+    const city = $("#hotelCity")?.value;
+    const checkIn = $("#checkIn")?.value;
+    const checkOut = $("#checkOut")?.value;
+    const stayDates = [checkIn, checkOut].filter(Boolean).join(" to ");
+    const titleParts = [city, stayDates].filter(Boolean);
+    return titleParts.length ? `Hotel - ${titleParts.join(" - ")}` : "Hotel booking";
+  }
+  if (state.travelType === "voucher") {
+    return `Voucher - ${$("#voucherVendor")?.value || "Untitled"}`;
+  }
+  return "Untitled draft";
+}
+
+function draftPayload() {
+  return {
+    id: state.currentDraftId,
+    title: draftTitle(),
+    travel_type: state.travelType || "unknown",
+    current_step: Math.min(state.highestStep || 1, 4),
+    data: {
+      travelType: state.travelType,
+      highestStep: state.highestStep,
+      panel: currentPanelName(),
+      values: collectFormValues(),
+      recommendation: state.recommendation,
+      selectedOption: state.selectedOption,
+    },
+  };
+}
+
 function setupDraftsAndCancel() {
   $$("[data-save-draft]").forEach((button) => {
-    button.addEventListener("click", () => {
-      localStorage.setItem(draftKey, JSON.stringify({
-        travelType: state.travelType,
-        highestStep: state.highestStep,
-        values: collectFormValues(),
-      }));
-      showToast("Draft saved on this computer.");
+    button.addEventListener("click", async () => {
+      if (!state.travelType) {
+        showToast("Start a booking before saving a draft.", true);
+        return;
+      }
+      try {
+        setStatus("Saving draft");
+        const draft = await postJson("/drafts", draftPayload());
+        state.currentDraftId = draft.id;
+        setStatus("Ready");
+        showToast("Draft saved.");
+      } catch (error) {
+        setStatus("Ready");
+        showToast(error.message, true);
+      }
     });
   });
 
@@ -1370,7 +1602,8 @@ function collectFormValues() {
   $$("input, select, textarea").forEach((field) => {
     const key = field.id ||
       (field.dataset.vendorAmount ? `amount:${field.dataset.vendorAmount}` : "") ||
-      (field.dataset.vendorDiscount ? `discount:${field.dataset.vendorDiscount}` : "");
+      (field.dataset.vendorDiscount ? `discount:${field.dataset.vendorDiscount}` : "") ||
+      (field.dataset.vendorVoucher ? `voucher:${field.dataset.vendorVoucher}` : "");
     if (key) values[key] = field.value;
   });
   return values;
@@ -1381,30 +1614,9 @@ function fillFormValues(values) {
     const field =
       document.getElementById(key) ||
       (key.startsWith("amount:") ? document.querySelector(`[data-vendor-amount="${key.slice(7)}"]`) : null) ||
-      (key.startsWith("discount:") ? document.querySelector(`[data-vendor-discount="${key.slice(9)}"]`) : null);
+      (key.startsWith("discount:") ? document.querySelector(`[data-vendor-discount="${key.slice(9)}"]`) : null) ||
+      (key.startsWith("voucher:") ? document.querySelector(`[data-vendor-voucher="${key.slice(8)}"]`) : null);
     if (field) field.value = value;
-  });
-}
-
-function setupDraftLoading() {
-  $("#loadDraft").addEventListener("click", () => {
-    const rawDraft = localStorage.getItem(draftKey);
-    if (!rawDraft) {
-      showToast("No saved draft found.", true);
-      return;
-    }
-    const draft = JSON.parse(rawDraft);
-    state.travelType = draft.travelType;
-    state.highestStep = Math.max(2, draft.highestStep || 2);
-    $("#priceTitle").textContent = titleForType();
-    updateFlightOnlyFields();
-    renderTripDetails();
-    renderVendorRows();
-    fillFormValues(draft.values);
-    refreshLayoverControls();
-    updateTripTypeControls();
-    showBookingPanel("prices");
-    showToast("Draft loaded.");
   });
 }
 
@@ -1413,13 +1625,13 @@ function cancelFlow() {
   state.recommendation = null;
   state.selectedOption = null;
   state.pendingDeclineOption = null;
+  state.currentDraftId = null;
   state.highestStep = 1;
   $("#quoteForm").reset();
   $("#finalForm").reset();
   $("#tripDetails").innerHTML = "";
   $("#vendorList").innerHTML = "";
   updateFlightOnlyFields();
-  localStorage.removeItem(draftKey);
   setStatus("Ready");
   showBookingPanel("trip");
 }
@@ -1458,30 +1670,34 @@ function setupReports() {
 }
 
 async function downloadReport(url) {
-  const reportWindow = window.open("", "_blank");
-  if (!reportWindow) {
-    showToast("Allow pop-ups to generate the report.", true);
-    return;
-  }
-  reportWindow.document.write("<p>Generating report...</p>");
   try {
+    setStatus("Generating report");
     const response = await fetch(url, { headers: await authHeaders() });
     if (!response.ok) throw new Error("Could not generate report.");
     const blob = await response.blob();
     const objectUrl = URL.createObjectURL(blob);
-    reportWindow.location.href = objectUrl;
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = "";
+    link.target = "_blank";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    setStatus("Ready");
   } catch (error) {
-    reportWindow.close();
+    setStatus("Ready");
     showToast(error.message, true);
   }
 }
 
 async function loadTransactions() {
   $("#bookingView").classList.add("is-hidden");
+  $("#draftsView").classList.add("is-hidden");
   $("#transactionsView").classList.remove("is-hidden");
   $("#transactionsTab").classList.add("is-active");
   $("#bookingTab").classList.remove("is-active");
+  $("#draftsTab").classList.remove("is-active");
 
   try {
     setStatus("Loading");
@@ -1499,6 +1715,97 @@ async function loadTransactions() {
     setStatus("Ready");
     showToast("Could not load past transactions.", true);
   }
+}
+
+async function loadDrafts() {
+  $("#bookingView").classList.add("is-hidden");
+  $("#transactionsView").classList.add("is-hidden");
+  $("#draftsView").classList.remove("is-hidden");
+  $("#bookingTab").classList.remove("is-active");
+  $("#transactionsTab").classList.remove("is-active");
+  $("#draftsTab").classList.add("is-active");
+
+  try {
+    setStatus("Loading");
+    const response = await fetch("/drafts", { headers: await authHeaders() });
+    if (!response.ok) throw new Error("Could not load drafts.");
+    const drafts = await response.json();
+    renderDrafts(drafts);
+    setStatus("Ready");
+  } catch (error) {
+    setStatus("Ready");
+    showToast(error.message, true);
+  }
+}
+
+function renderDrafts(drafts) {
+  const list = $("#draftList");
+  if (!drafts.length) {
+    list.innerHTML = `<p class="empty-state">No drafts saved yet.</p>`;
+    return;
+  }
+  list.innerHTML = drafts.map((draft) => `
+    <article class="draft-row">
+      <div>
+        <strong>${escapeHtml(draft.title)}</strong>
+        <span>${escapeHtml(formatTravelType(draft.travel_type))} - Step ${draft.current_step} - Updated ${formatDate(draft.updated_at)}</span>
+      </div>
+      <div class="draft-actions">
+        <button class="primary compact" data-resume-draft="${draft.id}" type="button">Resume</button>
+        <button class="danger-button compact" data-delete-draft="${draft.id}" type="button">Delete</button>
+      </div>
+    </article>
+  `).join("");
+
+  $$("[data-resume-draft]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const response = await fetch(`/drafts/${button.dataset.resumeDraft}`, { headers: await authHeaders() });
+      if (!response.ok) {
+        showToast("Could not load draft.", true);
+        return;
+      }
+      resumeDraft(await response.json());
+    });
+  });
+
+  $$("[data-delete-draft]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!window.confirm("Delete this draft?")) return;
+      try {
+        setStatus("Deleting");
+        await deleteJson(`/drafts/${button.dataset.deleteDraft}`);
+        await loadDrafts();
+        showToast("Draft deleted.");
+      } catch (error) {
+        setStatus("Ready");
+        showToast(error.message, true);
+      }
+    });
+  });
+}
+
+function resumeDraft(draft) {
+  const data = draft.data || {};
+  state.currentDraftId = draft.id;
+  state.travelType = data.travelType || draft.travel_type;
+  state.highestStep = Math.max(2, data.highestStep || draft.current_step || 2);
+  state.recommendation = data.recommendation || null;
+  state.selectedOption = data.selectedOption || null;
+  state.pendingDeclineOption = null;
+  $("#quoteForm").reset();
+  $("#finalForm").reset();
+  $("#priceTitle").textContent = titleForType();
+  updateFlightOnlyFields();
+  renderTripDetails();
+  renderVendorRows();
+  fillFormValues(data.values || {});
+  refreshSplitPickers();
+  refreshLayoverControls();
+  updateTripTypeControls();
+  if (state.recommendation?.ranked_options?.length) renderRecommendation();
+  if (state.selectedOption) renderFinalize();
+  showBookingPanel(data.panel || "prices");
+  showToast("Draft loaded.");
 }
 
 function renderSummary(summary) {
@@ -1531,15 +1838,11 @@ function renderTransactions(transactions) {
   }
   list.innerHTML = "";
 
-  const oldestFirstTransactions = [...transactions].sort((first, second) => (
-    new Date(first.paid_at) - new Date(second.paid_at)
-  ));
+  const oldestFirstTransactions = [...transactions].sort((first, second) => compareTransactions(first, second));
   const transactionNumbers = new Map(
     oldestFirstTransactions.map((item, index) => [item.id, index + 1])
   );
-  const sortedTransactions = [...transactions].sort((first, second) => (
-    new Date(second.paid_at) - new Date(first.paid_at)
-  ));
+  const sortedTransactions = [...transactions].sort((first, second) => compareTransactions(second, first));
   const groups = groupTransactionsByMonth(sortedTransactions);
   groups.forEach((group) => {
     const section = document.createElement("section");
@@ -1554,9 +1857,15 @@ function renderTransactions(transactions) {
         <span>Total spend: <strong>${formatMoney(group.totalSpend)}</strong></span>
       </div>
     `;
-    group.items.forEach((item) => {
-      const transactionNumber = transactionNumbers.get(item.id);
-      section.appendChild(transactionRow(item, transactionNumber));
+    groupTransactionCategories(group.items).forEach((category) => {
+      const categoryBlock = document.createElement("div");
+      categoryBlock.className = "transaction-category";
+      categoryBlock.innerHTML = `<h4>${category.label}</h4>`;
+      category.items.forEach((item) => {
+        const transactionNumber = transactionNumbers.get(item.id);
+        categoryBlock.appendChild(transactionRow(item, transactionNumber));
+      });
+      section.appendChild(categoryBlock);
     });
     list.appendChild(section);
   });
@@ -1576,6 +1885,13 @@ function renderTransactions(transactions) {
       }
     });
   });
+}
+
+function compareTransactions(first, second) {
+  const firstTime = new Date(first.paid_at || first.created_at).getTime();
+  const secondTime = new Date(second.paid_at || second.created_at).getTime();
+  if (firstTime !== secondTime) return firstTime - secondTime;
+  return new Date(first.created_at || first.paid_at).getTime() - new Date(second.created_at || second.paid_at).getTime();
 }
 
 function groupTransactionsByMonth(transactions) {
@@ -1601,6 +1917,15 @@ function groupTransactionsByMonth(transactions) {
     group.items.push(item);
   });
   return groups;
+}
+
+function groupTransactionCategories(transactions) {
+  const labels = { flight: "Flights", hotel: "Hotels", voucher: "Vouchers" };
+  return ["flight", "hotel", "voucher"].map((type) => ({
+    type,
+    label: labels[type],
+    items: transactions.filter((item) => item.travel_type === type),
+  })).filter((group) => group.items.length);
 }
 
 function transactionRow(item, transactionNumber) {
@@ -1650,6 +1975,12 @@ function transactionDetailLine(item) {
     parts.push(details.check_out ? `Check-out: ${details.check_out}` : "");
     parts.push(details.check_out_time ? `Check-out time: ${details.check_out_time}` : "");
   }
+  if (details.voucher_purchase_amount_paid || details.card_balance_paid || details.voucher_amount_paid || details.cash_amount_paid) {
+    if (details.checkout_value) parts.push(`Booking value: ${formatMoney(details.checkout_value)}`);
+    if (details.voucher_face_value_used) parts.push(`Voucher value used: ${formatMoney(details.voucher_face_value_used)}`);
+    parts.push(`Voucher purchase cost: ${formatMoney(details.voucher_purchase_amount_paid || details.voucher_amount_paid || 0)}`);
+    parts.push(`Direct card balance: ${formatMoney(details.card_balance_paid || details.cash_amount_paid || 0)}`);
+  }
   return parts.filter(Boolean).join(" - ");
 }
 
@@ -1660,7 +1991,6 @@ setupQuoteForm();
 setupDeclineActions();
 setupFinalForm();
 setupDraftsAndCancel();
-setupDraftLoading();
 setupStartOver();
 setupReports();
 setupChoicePdf();
