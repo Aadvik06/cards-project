@@ -21,6 +21,10 @@ class QuoteRequest(BaseModel):
     description: str | None = None
     discount_rate: Decimal = Field(default=Decimal("0"), ge=0)
     voucher_face_value: Decimal | None = Field(default=None, ge=0)
+    gst_invoice_available: bool = False
+    origin_state: str | None = None
+    destination_state: str | None = None
+    hotel_state: str | None = None
 
     def to_domain(self) -> QuoteInput:
         return QuoteInput(
@@ -30,6 +34,10 @@ class QuoteRequest(BaseModel):
             description=self.description,
             discount_rate=self.discount_rate,
             voucher_face_value=self.voucher_face_value,
+            gst_invoice_available=self.gst_invoice_available,
+            origin_state=self.origin_state,
+            destination_state=self.destination_state,
+            hotel_state=self.hotel_state,
         )
 
 
@@ -60,6 +68,10 @@ class RecommendationOptionResponse(BaseModel):
     capped_bonus_points: Decimal
     total_points: Decimal
     points_value_rupees: Decimal
+    gst_credit: Decimal
+    tax_benefit: Decimal
+    gst_claimable: bool
+    gst_note: str
     net_cost: Decimal
     cap_remaining_after: Decimal
     explanation: str

@@ -395,6 +395,22 @@ label {
   font-weight: 700;
 }
 
+.checkbox-label {
+  align-items: center;
+  grid-template-columns: auto 1fr;
+  gap: 9px;
+  min-height: 48px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.checkbox-label input {
+  width: 18px;
+  height: 18px;
+}
+
 input,
 select,
 textarea {

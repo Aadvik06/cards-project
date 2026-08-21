@@ -62,6 +62,10 @@ class QuoteInput:
     description: str | None = None
     discount_rate: Decimal = Decimal("0")
     voucher_face_value: Decimal | None = None
+    gst_invoice_available: bool = False
+    origin_state: str | None = None
+    destination_state: str | None = None
+    hotel_state: str | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +88,10 @@ class RecommendationOption:
     capped_bonus_points: Decimal
     total_points: Decimal
     points_value_rupees: Decimal
+    gst_credit: Decimal
+    tax_benefit: Decimal
+    gst_claimable: bool
+    gst_note: str
     net_cost: Decimal
     cap_remaining_after: Decimal
     explanation: str

@@ -45,6 +45,47 @@ const amexTravelVoucherVendors = new Set([
   "amex_cleartrip_hotel_voucher",
 ]);
 
+const indianStates = [
+  "Andhra Pradesh",
+  "Arunachal Pradesh",
+  "Assam",
+  "Bihar",
+  "Chhattisgarh",
+  "Goa",
+  "Gujarat",
+  "Haryana",
+  "Himachal Pradesh",
+  "Jharkhand",
+  "Karnataka",
+  "Kerala",
+  "Madhya Pradesh",
+  "Maharashtra",
+  "Manipur",
+  "Meghalaya",
+  "Mizoram",
+  "Nagaland",
+  "Odisha",
+  "Punjab",
+  "Rajasthan",
+  "Sikkim",
+  "Tamil Nadu",
+  "Telangana",
+  "Tripura",
+  "Uttar Pradesh",
+  "Uttarakhand",
+  "West Bengal",
+  "Andaman and Nicobar Islands",
+  "Chandigarh",
+  "Dadra and Nagar Haveli and Daman and Diu",
+  "Daman",
+  "Delhi",
+  "Jammu and Kashmir",
+  "Ladakh",
+  "Lakshadweep",
+  "Puducherry",
+  "Outside India",
+];
+
 const auth = {
   enabled: false,
   client: null,
@@ -109,6 +150,15 @@ function cabinClassSelect(id) {
       <option value="Premium Economy">Premium Economy</option>
       <option value="Business">Business</option>
       <option value="First Class">First Class</option>
+    </select>
+  `;
+}
+
+function stateSelect(id) {
+  return `
+    <select id="${id}">
+      <option value="">Select state/province</option>
+      ${indianStates.map((stateName) => `<option value="${stateName}">${stateName}</option>`).join("")}
     </select>
   `;
 }
@@ -628,7 +678,9 @@ function renderTripDetails() {
   if (state.travelType === "flight") {
     details.innerHTML = `
       <label>From<input id="fromCity" /></label>
+      <label>From state/province${stateSelect("fromState")}</label>
       <label>To<input id="toCity" /></label>
+      <label>To state/province${stateSelect("toState")}</label>
       <label>Flight date<input id="detailDate" type="date" /></label>
       <label>Return flight date<input id="returnFlightDate" class="inbound-only" type="date" /></label>
       <label>
@@ -641,6 +693,7 @@ function renderTripDetails() {
     `;
   } else if (state.travelType === "hotel") {
     details.innerHTML = `
+      <label>Hotel state/province${stateSelect("hotelState")}</label>
       <label>Check-in<input id="checkIn" type="date" /></label>
       <label>Check-out<input id="checkOut" type="date" /></label>
     `;
@@ -705,6 +758,10 @@ function renderVendorRows() {
             placeholder="0"
             ${noDiscountVendors.has(vendor.id) ? "value=\"0\" disabled" : ""}
           />
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" data-vendor-gst="${vendor.id}" />
+          GST invoice can be created
         </label>
         ${vendorDetailFields(vendor)}
       </div>
@@ -830,11 +887,18 @@ function collectQuotes() {
     const amountInput = document.querySelector(`[data-vendor-amount="${vendor.id}"]`);
     const discountInput = document.querySelector(`[data-vendor-discount="${vendor.id}"]`);
     const voucherInput = document.querySelector(`[data-vendor-voucher="${vendor.id}"]`);
+    const gstInput = document.querySelector(`[data-vendor-gst="${vendor.id}"]`);
     const amount = Number(amountInput.value);
     const discountPercent = noDiscountVendors.has(vendor.id) ? 0 : Number(discountInput?.value || 0);
     const voucherFaceValue = Number(voucherInput?.value || 0);
 
     if (amount > 0) {
+      if (state.travelType === "flight" && (!$("#fromState")?.value || !$("#toState")?.value)) {
+        throw new Error("Select from and to state/province before calculating flight recommendations.");
+      }
+      if (state.travelType === "hotel" && !$("#hotelState")?.value) {
+        throw new Error("Select the hotel state/province before calculating hotel recommendations.");
+      }
       if (isAmexTravelVoucherVendor(vendor.id) && voucherFaceValue <= 0) {
         throw new Error("Enter the voucher value for each Amex voucher option with a price.");
       }
@@ -846,6 +910,10 @@ function collectQuotes() {
         amount: String(amount),
         discount_rate: String(discountPercent / 100),
         voucher_face_value: isAmexTravelVoucherVendor(vendor.id) ? String(voucherFaceValue) : null,
+        gst_invoice_available: Boolean(gstInput?.checked),
+        origin_state: state.travelType === "flight" ? $("#fromState")?.value || null : null,
+        destination_state: state.travelType === "flight" ? $("#toState")?.value || null : null,
+        hotel_state: state.travelType === "hotel" ? $("#hotelState")?.value || null : null,
       });
     }
   });
@@ -891,9 +959,12 @@ function collectDetails() {
       trip_region: $("#tripRegion")?.value || "",
       trip_type: $("#flightTripType")?.value || "",
       from: $("#fromCity")?.value.trim() || "",
+      from_state: $("#fromState")?.value || "",
       to: $("#toCity")?.value.trim() || "",
+      to_state: $("#toState")?.value || "",
       flight_date: $("#detailDate")?.value || "",
       return_flight_date: $("#returnFlightDate")?.value || "",
+      gst_invoice_available: selectedVendorId ? document.querySelector(`[data-vendor-gst="${selectedVendorId}"]`)?.checked || false : false,
     };
   }
   if (state.travelType === "hotel") {
@@ -901,10 +972,12 @@ function collectDetails() {
       ...common,
       hotel_name: selectedVendorId ? $(`#${selectedVendorId}_hotel`)?.value.trim() || "" : "",
       city: $("#hotelCity")?.value.trim() || "",
+      hotel_state: $("#hotelState")?.value || "",
       check_in: $("#checkIn")?.value || "",
       check_in_time: selectedVendorId ? $(`#${selectedVendorId}_check_in_time`)?.value || "" : "",
       check_out: $("#checkOut")?.value || "",
       check_out_time: selectedVendorId ? $(`#${selectedVendorId}_check_out_time`)?.value || "" : "",
+      gst_invoice_available: selectedVendorId ? document.querySelector(`[data-vendor-gst="${selectedVendorId}"]`)?.checked || false : false,
     };
   }
   return {
@@ -1042,7 +1115,7 @@ function optionCard(option, isBest) {
   const button = isBest
     ? `<button class="primary" type="button" data-accept-option="${option.id}">${isBankTransfer ? "Use this option" : "Use this card"}</button>`
     : `<button class="secondary" type="button" data-decline-option="${option.id}">Choose this instead</button>`;
-  const netCostLabel = isBankTransfer ? "Net cost" : "Net cost after points";
+  const netCostLabel = isBankTransfer ? "Effective cost" : "Effective cost after points + GST";
   const voucherMath = voucherMathDetails(option);
 
   return `
@@ -1063,6 +1136,8 @@ function optionCard(option, isBest) {
         <div class="metric"><span>${netCostLabel}</span><strong>${formatMoney(option.net_cost)}</strong></div>
         <div class="metric"><span>Total points</span><strong>${formatNumber(option.total_points)}</strong></div>
         <div class="metric"><span>Point value</span><strong>${formatMoney(option.points_value_rupees)}</strong></div>
+        <div class="metric"><span>GST credit</span><strong>${formatMoney(option.gst_credit || 0)}</strong></div>
+        <div class="metric"><span>Tax benefit</span><strong>${formatMoney(option.tax_benefit || 0)}</strong></div>
       </div>
     </article>
   `;
@@ -1097,6 +1172,7 @@ function optionDecisionDetails(option) {
         <div class="option-detail"><span>Flight date</span><strong>${detailValue($("#detailDate")?.value)}</strong></div>
         <div class="option-detail"><span>Return flight date</span><strong>${detailValue($("#returnFlightDate")?.value)}</strong></div>
         <div class="option-detail"><span>Airline</span><strong>${detailValue(airline)}</strong></div>
+        <div class="option-detail"><span>GST</span><strong>${option.gst_claimable ? "Claimable" : "Not claimable"}</strong></div>
         <div class="option-detail wide-detail"><span>Outbound flight</span><strong>${detailValue(flightLegSummary(outboundLeg))}</strong></div>
         <div class="option-detail wide-detail"><span>Inbound flight</span><strong>${detailValue(flightLegSummary(returnLeg))}</strong></div>
       </div>
@@ -1117,6 +1193,7 @@ function optionDecisionDetails(option) {
         <div class="option-detail"><span>Check-out</span><strong>${detailValue($("#checkOut")?.value)}</strong></div>
         <div class="option-detail"><span>Check-in time</span><strong>${detailValue(checkInTime)}</strong></div>
         <div class="option-detail"><span>Check-out time</span><strong>${detailValue(checkOutTime)}</strong></div>
+        <div class="option-detail"><span>GST</span><strong>${option.gst_claimable ? "Claimable" : "Not claimable"}</strong></div>
       </div>
     `;
   }
@@ -1165,6 +1242,9 @@ function comparisonRowValue(option, rowKey) {
   }
   if (rowKey === "Direct card balance") return isAmexTravelVoucherOption(option) ? formatMoney(option.cash_component) : "-";
   if (rowKey === "Cash to pay") return formatMoney(option.price_after_discount);
+  if (rowKey === "GST credit") return formatMoney(option.gst_credit || 0);
+  if (rowKey === "Tax benefit") return formatMoney(option.tax_benefit || 0);
+  if (rowKey === "GST status") return option.gst_claimable ? "Claimable" : "Not claimable";
   if (rowKey === "Net cost") return formatMoney(option.net_cost);
   if (rowKey === "Total points") return formatNumber(option.total_points);
   if (rowKey === "Point value") return formatMoney(option.points_value_rupees);
@@ -1195,6 +1275,9 @@ function setupChoicePdf() {
       "Cash to pay",
       "Total points",
       "Point value",
+      "GST credit",
+      "Tax benefit",
+      "GST status",
       "Net cost",
     ].map((label) => `
       <tr class="${label === "Net cost" ? "net-cost-row" : ""}">
@@ -1603,8 +1686,9 @@ function collectFormValues() {
     const key = field.id ||
       (field.dataset.vendorAmount ? `amount:${field.dataset.vendorAmount}` : "") ||
       (field.dataset.vendorDiscount ? `discount:${field.dataset.vendorDiscount}` : "") ||
-      (field.dataset.vendorVoucher ? `voucher:${field.dataset.vendorVoucher}` : "");
-    if (key) values[key] = field.value;
+      (field.dataset.vendorVoucher ? `voucher:${field.dataset.vendorVoucher}` : "") ||
+      (field.dataset.vendorGst ? `gst:${field.dataset.vendorGst}` : "");
+    if (key) values[key] = field.type === "checkbox" ? field.checked : field.value;
   });
   return values;
 }
@@ -1615,8 +1699,12 @@ function fillFormValues(values) {
       document.getElementById(key) ||
       (key.startsWith("amount:") ? document.querySelector(`[data-vendor-amount="${key.slice(7)}"]`) : null) ||
       (key.startsWith("discount:") ? document.querySelector(`[data-vendor-discount="${key.slice(9)}"]`) : null) ||
-      (key.startsWith("voucher:") ? document.querySelector(`[data-vendor-voucher="${key.slice(8)}"]`) : null);
-    if (field) field.value = value;
+      (key.startsWith("voucher:") ? document.querySelector(`[data-vendor-voucher="${key.slice(8)}"]`) : null) ||
+      (key.startsWith("gst:") ? document.querySelector(`[data-vendor-gst="${key.slice(4)}"]`) : null);
+    if (field) {
+      if (field.type === "checkbox") field.checked = Boolean(value);
+      else field.value = value;
+    }
   });
 }
 

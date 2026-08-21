@@ -110,6 +110,11 @@ class RecommendationEngine:
         )
 
     def _agent_option(self, *, quote: QuoteInput, travel_type: TravelType) -> RecommendationOption:
+        gst_credit, tax_benefit, gst_claimable, gst_note = self.calculator._gst_credit(
+            quote=quote,
+            travel_type=travel_type,
+            gst_base_amount=quote.amount,
+        )
         return RecommendationOption(
             id=str(uuid4()),
             rank=0,
@@ -129,11 +134,15 @@ class RecommendationEngine:
             capped_bonus_points=points(Decimal("0")),
             total_points=points(Decimal("0")),
             points_value_rupees=money(Decimal("0")),
-            net_cost=money(quote.amount),
+            gst_credit=money(gst_credit),
+            tax_benefit=money(tax_benefit),
+            gst_claimable=gst_claimable,
+            gst_note=gst_note,
+            net_cost=money(quote.amount - gst_credit - tax_benefit),
             cap_remaining_after=points(Decimal("0")),
             explanation=(
                 "Travel Agent is paid by direct bank transfer. Net cost equals the agent price, "
-                "with no card rewards or bonus cap impact."
+                "minus any claimable GST credit, with no card rewards or bonus cap impact."
             ),
         )
 

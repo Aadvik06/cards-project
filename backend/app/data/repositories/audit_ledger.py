@@ -59,9 +59,10 @@ class AuditLedger:
                     id, recommendation_id, rank, card_id, card_name, vendor_id, vendor_name,
                     travel_type, listed_amount, eligible_amount, cash_component, discount_rate,
                     price_after_discount, base_points, raw_bonus_points, awarded_bonus_points,
-                    capped_bonus_points, total_points, points_value_rupees, net_cost,
+                    capped_bonus_points, total_points, points_value_rupees, gst_credit,
+                    tax_benefit, gst_claimable, gst_note, net_cost,
                     cap_remaining_after, explanation, card_rank
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
             )
             option_rows = [
@@ -114,6 +115,10 @@ class AuditLedger:
                     description=quote.get("description"),
                     discount_rate=Decimal(quote["discount_rate"]),
                     voucher_face_value=Decimal(quote["voucher_face_value"]) if quote.get("voucher_face_value") else None,
+                    gst_invoice_available=bool(quote.get("gst_invoice_available")),
+                    origin_state=quote.get("origin_state"),
+                    destination_state=quote.get("destination_state"),
+                    hotel_state=quote.get("hotel_state"),
                 )
                 for quote in json.loads(row["quotes_json"])
             ],
@@ -275,6 +280,10 @@ class AuditLedger:
         with self._connect() as connection:
             self._run_schema(connection)
             self._ensure_column(connection, "transactions", "details_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(connection, "recommendation_options", "gst_credit", "TEXT NOT NULL DEFAULT '0'")
+            self._ensure_column(connection, "recommendation_options", "tax_benefit", "TEXT NOT NULL DEFAULT '0'")
+            self._ensure_column(connection, "recommendation_options", "gst_claimable", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "recommendation_options", "gst_note", "TEXT NOT NULL DEFAULT ''")
 
     @contextmanager
     def _connect(self) -> Iterator[Any]:
@@ -415,6 +424,10 @@ class AuditLedger:
                 capped_bonus_points TEXT NOT NULL,
                 total_points TEXT NOT NULL,
                 points_value_rupees TEXT NOT NULL,
+                gst_credit TEXT NOT NULL DEFAULT '0',
+                tax_benefit TEXT NOT NULL DEFAULT '0',
+                gst_claimable INTEGER NOT NULL DEFAULT 0,
+                gst_note TEXT NOT NULL DEFAULT '',
                 net_cost TEXT NOT NULL,
                 cap_remaining_after TEXT NOT NULL,
                 explanation TEXT NOT NULL,
@@ -479,6 +492,10 @@ class AuditLedger:
             "description": quote.description,
             "discount_rate": str(quote.discount_rate),
             "voucher_face_value": str(quote.voucher_face_value) if quote.voucher_face_value is not None else None,
+            "gst_invoice_available": quote.gst_invoice_available,
+            "origin_state": quote.origin_state,
+            "destination_state": quote.destination_state,
+            "hotel_state": quote.hotel_state,
         }
 
     def _ensure_column(
@@ -530,6 +547,10 @@ class AuditLedger:
             str(option.capped_bonus_points),
             str(option.total_points),
             str(option.points_value_rupees),
+            str(option.gst_credit),
+            str(option.tax_benefit),
+            int(option.gst_claimable),
+            option.gst_note,
             str(option.net_cost),
             str(option.cap_remaining_after),
             option.explanation,
@@ -562,6 +583,10 @@ class AuditLedger:
             capped_bonus_points=Decimal(row["capped_bonus_points"]),
             total_points=Decimal(row["total_points"]),
             points_value_rupees=Decimal(row["points_value_rupees"]),
+            gst_credit=Decimal(row["gst_credit"]),
+            tax_benefit=Decimal(row["tax_benefit"]),
+            gst_claimable=bool(row["gst_claimable"]),
+            gst_note=row["gst_note"],
             net_cost=Decimal(row["net_cost"]),
             cap_remaining_after=Decimal(row["cap_remaining_after"]),
             explanation=row["explanation"],

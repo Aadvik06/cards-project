@@ -146,6 +146,79 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(Decimal("0.0000"), transaction.total_points)
         self.assertEqual(Decimal("9100.00"), transaction.net_cost)
 
+    def test_flight_gst_credit_reduces_ranked_net_cost_when_invoice_is_available(self) -> None:
+        recommendation = self.recommendations.create_recommendation(
+            employee_id="emp-gst-flight",
+            travel_type=TravelType.FLIGHT,
+            quotes=[
+                QuoteInput(
+                    "hdfc_smartbuy_flight",
+                    Decimal("10500"),
+                    gst_invoice_available=True,
+                    origin_state="Maharashtra",
+                    destination_state="Delhi",
+                )
+            ],
+        )
+        option = recommendation.ranked_options[0]
+
+        self.assertTrue(option.gst_claimable)
+        self.assertEqual(Decimal("500.00"), option.gst_credit)
+        self.assertEqual(Decimal("8251.75"), option.net_cost)
+
+    def test_hotel_gst_credit_only_applies_in_company_registered_states(self) -> None:
+        allowed = self.recommendations.create_recommendation(
+            employee_id="emp-gst-hotel",
+            travel_type=TravelType.HOTEL,
+            quotes=[
+                QuoteInput(
+                    "hdfc_smartbuy_hotel",
+                    Decimal("11800"),
+                    gst_invoice_available=True,
+                    hotel_state="Maharashtra",
+                )
+            ],
+        ).ranked_options[0]
+        blocked = self.recommendations.create_recommendation(
+            employee_id="emp-gst-hotel",
+            travel_type=TravelType.HOTEL,
+            quotes=[
+                QuoteInput(
+                    "hdfc_smartbuy_hotel",
+                    Decimal("11800"),
+                    gst_invoice_available=True,
+                    hotel_state="Delhi",
+                )
+            ],
+        ).ranked_options[0]
+
+        self.assertTrue(allowed.gst_claimable)
+        self.assertEqual(Decimal("1800.00"), allowed.gst_credit)
+        self.assertFalse(blocked.gst_claimable)
+        self.assertEqual(Decimal("0.00"), blocked.gst_credit)
+        self.assertEqual(Decimal("495.00"), blocked.tax_benefit)
+        self.assertLess(allowed.net_cost, blocked.net_cost)
+
+    def test_non_claimable_flight_gst_gets_tax_benefit_on_gst_component(self) -> None:
+        recommendation = self.recommendations.create_recommendation(
+            employee_id="emp-tax-benefit",
+            travel_type=TravelType.FLIGHT,
+            quotes=[
+                QuoteInput(
+                    "hdfc_smartbuy_flight",
+                    Decimal("10500"),
+                    gst_invoice_available=False,
+                    origin_state="Maharashtra",
+                    destination_state="Delhi",
+                )
+            ],
+        )
+        option = recommendation.ranked_options[0]
+
+        self.assertFalse(option.gst_claimable)
+        self.assertEqual(Decimal("0.00"), option.gst_credit)
+        self.assertEqual(Decimal("137.50"), option.tax_benefit)
+
     def test_finalized_history_reduces_future_available_caps(self) -> None:
         first = self.recommendations.create_recommendation(
             employee_id="emp-5",
@@ -250,38 +323,43 @@ class RecommendationEngineTests(unittest.TestCase):
             quotes=[
                 QuoteInput(
                     "amex_mmt_flight_voucher",
-                    Decimal("10001"),
+                    Decimal("10200"),
                     discount_rate=Decimal("0.02"),
                     voucher_face_value=Decimal("10000"),
+                    gst_invoice_available=True,
+                    origin_state="Maharashtra",
+                    destination_state="Delhi",
                 )
             ],
         )
         selected = recommendation.ranked_options[0]
 
         self.assertEqual(Decimal("10000.00"), selected.eligible_amount)
-        self.assertEqual(Decimal("1.00"), selected.cash_component)
-        self.assertEqual(Decimal("9801.00"), selected.price_after_discount)
-        self.assertEqual(Decimal("294.0300"), selected.base_points)
+        self.assertEqual(Decimal("200.00"), selected.cash_component)
+        self.assertEqual(Decimal("10000.00"), selected.price_after_discount)
+        self.assertEqual(Decimal("300.0000"), selected.base_points)
         self.assertEqual(Decimal("2646.0000"), selected.awarded_bonus_points)
-        self.assertEqual(Decimal("2940.0300"), selected.total_points)
+        self.assertEqual(Decimal("2946.0000"), selected.total_points)
+        self.assertEqual(Decimal("485.71"), selected.gst_credit)
 
         transaction = self.transactions.finalize_transaction(
             recommendation_id=recommendation.id,
             selected_option_id=selected.id,
-            final_amount_paid=Decimal("9801"),
+            final_amount_paid=Decimal("10000"),
             paid_at=datetime(2026, 8, 11, tzinfo=UTC),
             details={
                 "description": "Amex discounted voucher plus card balance.",
                 "voucher_face_value_used": "10000",
                 "voucher_purchase_amount_paid": "9800",
-                "card_balance_paid": "1",
+                "card_balance_paid": "200",
             },
         )
 
-        self.assertEqual(Decimal("9801.00"), transaction.final_amount_paid)
-        self.assertEqual(Decimal("294.0300"), transaction.base_points)
+        self.assertEqual(Decimal("10000.00"), transaction.final_amount_paid)
+        self.assertEqual(Decimal("300.0000"), transaction.base_points)
         self.assertEqual(Decimal("2646.0000"), transaction.bonus_points)
-        self.assertEqual(Decimal("2940.0300"), transaction.total_points)
+        self.assertEqual(Decimal("2946.0000"), transaction.total_points)
+        self.assertEqual(Decimal("7540.47"), transaction.net_cost)
 
     def test_amex_travel_voucher_split_awards_bonus_only_on_voucher_purchase_cost(self) -> None:
         recommendation = self.recommendations.create_recommendation(

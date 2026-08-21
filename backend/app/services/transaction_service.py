@@ -63,7 +63,13 @@ class TransactionService:
             raise InvalidDecisionError("Final card/vendor pair was not eligible in the recommendation.")
 
         paid_at = paid_at or datetime.now(UTC)
+        original_quote = self._original_quote(recommendation, selected_vendor_id)
         if selected_card_id == AGENT_CARD_ID:
+            gst_credit, tax_benefit, _, _ = self.recommendation_service.engine.calculator._gst_credit(
+                quote=original_quote,
+                travel_type=recommendation.travel_type,
+                gst_base_amount=final_amount_paid,
+            )
             transaction = TransactionRecord(
                 id=str(uuid4()),
                 recommendation_id=recommendation_id,
@@ -77,7 +83,7 @@ class TransactionService:
                 bonus_points=points(Decimal("0")),
                 total_points=points(Decimal("0")),
                 points_value_rupees=money(Decimal("0")),
-                net_cost=money(final_amount_paid),
+                net_cost=money(final_amount_paid - gst_credit - tax_benefit),
                 paid_at=paid_at,
                 details=details or {},
             )
@@ -93,6 +99,7 @@ class TransactionService:
                 discount_rate=original_option.discount_rate,
                 paid_at=paid_at,
                 details=details or {},
+                original_quote=original_quote,
             )
             self.recommendation_service.ledger.append_transaction(transaction)
             return transaction
@@ -101,6 +108,10 @@ class TransactionService:
             vendor_id=selected_vendor_id,
             amount=final_amount_paid,
             discount_rate=original_option.discount_rate,
+            gst_invoice_available=original_quote.gst_invoice_available,
+            origin_state=original_quote.origin_state,
+            destination_state=original_quote.destination_state,
+            hotel_state=original_quote.hotel_state,
         )
         final_recommendation = self.recommendation_service.engine.rank(
             employee_id=recommendation.employee_id,
@@ -146,6 +157,12 @@ class TransactionService:
             return False
         return ("amex", vendor_id) in self.recommendation_service.engine.voucher_rules
 
+    def _original_quote(self, recommendation: Recommendation, vendor_id: str) -> QuoteInput:
+        for quote in recommendation.quotes:
+            if quote.vendor_id == vendor_id:
+                return quote
+        return QuoteInput(vendor_id=vendor_id, amount=Decimal("0"))
+
     def _finalize_amex_voucher_split(
         self,
         *,
@@ -156,6 +173,7 @@ class TransactionService:
         discount_rate: Decimal,
         paid_at: datetime,
         details: dict,
+        original_quote: QuoteInput,
     ) -> TransactionRecord:
         card = next(card for card in self.recommendation_service.cards if card.id == selected_card_id)
         voucher_face_value = money(Decimal(str(details.get("voucher_face_value_used") or details.get("voucher_amount_paid") or "0")))
@@ -181,6 +199,19 @@ class TransactionService:
         awarded_bonus_points = min(raw_bonus_points, remaining_bonus_cap(card, usage))
         total_points = base_points + awarded_bonus_points
         points_value_rupees = total_points * card.point_value_rupees
+        gst_quote = QuoteInput(
+            vendor_id=selected_vendor_id,
+            amount=checkout_value,
+            gst_invoice_available=original_quote.gst_invoice_available,
+            origin_state=original_quote.origin_state,
+            destination_state=original_quote.destination_state,
+            hotel_state=original_quote.hotel_state,
+        )
+        gst_credit, tax_benefit, _, _ = self.recommendation_service.engine.calculator._gst_credit(
+            quote=gst_quote,
+            travel_type=recommendation.travel_type,
+            gst_base_amount=checkout_value,
+        )
 
         return TransactionRecord(
             id=str(uuid4()),
@@ -195,7 +226,7 @@ class TransactionService:
             bonus_points=points(awarded_bonus_points),
             total_points=points(total_points),
             points_value_rupees=money(points_value_rupees),
-            net_cost=money(split_total - points_value_rupees),
+            net_cost=money(split_total - points_value_rupees - gst_credit - tax_benefit),
             paid_at=paid_at,
             details=details,
         )
