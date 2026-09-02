@@ -2122,30 +2122,100 @@ function groupTransactionCategories(transactions) {
 }
 
 function transactionRow(item, transactionNumber) {
-    const details = item.details || {};
-    const card = formatCardName(item.card_id);
-    const isBankTransfer = item.card_id === "bank_transfer";
-    const detailLine = transactionDetailLine(item);
-    const row = document.createElement("article");
-    row.className = "transaction-row";
-    row.innerHTML = `
+  const details = item.details || {};
+  const card = formatCardName(item.card_id);
+  const isBankTransfer = item.card_id === "bank_transfer";
+  const summary = transactionSummary(item);
+  const row = document.createElement("article");
+  row.className = "transaction-row";
+  row.innerHTML = `
+    <div class="transaction-overview">
       <img class="transaction-card-image ${isBankTransfer ? "logo-image" : ""}" src="${cardImageFor(item.card_id)}" alt="${card} ${isBankTransfer ? "logo" : "card"}" />
-      <div>
-        <strong>${transactionNumber}. ${card}</strong>
-        <span>${detailLine}</span>
-        <small>${details.description || ""}</small>
-        <small class="invoice-status ${item.invoice_status === "uploaded" ? "is-uploaded" : ""}">Invoice: ${item.invoice_status === "uploaded" ? "uploaded" : "pending"}</small>
+      <div class="transaction-copy">
+        <div class="transaction-title-row">
+          <strong>${transactionNumber}. ${escapeHtml(card)}</strong>
+          <span class="invoice-status ${item.invoice_status === "uploaded" ? "is-uploaded" : ""}">Invoice ${item.invoice_status === "uploaded" ? "uploaded" : "pending"}</span>
+        </div>
+        <h4>${escapeHtml(summary.title)}</h4>
+        <p>${escapeHtml(summary.metadata)}</p>
+        <div class="transaction-tags">${summary.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
+        ${details.description ? `<p class="transaction-note">${escapeHtml(details.description)}</p>` : ""}
       </div>
-      <div><span>Paid</span><strong>${formatMoney(item.final_amount_paid)}</strong></div>
-      <div><span>Points</span><strong>${formatNumber(item.total_points)}</strong></div>
-      <div class="transaction-actions">
-        ${item.invoice_status === "uploaded" ? `<button class="secondary compact" data-view-invoice="${item.id}" type="button">View invoice</button>` : ""}
-        ${item.invoice_status === "uploaded" ? `<button class="secondary compact" data-download-invoice="${item.id}" data-invoice-name="${escapeHtml(item.invoice?.filename || "invoice")}" type="button">Download</button><button class="danger-button compact" data-delete-invoice="${item.id}" type="button">Delete invoice</button>` : ""}
-        ${invoiceUploadControl(item.id, item.invoice)}
-        <button class="danger-button compact" data-delete-transaction="${item.id}" type="button">Delete</button>
-      </div>
-    `;
-    return row;
+    </div>
+    <div class="transaction-stat"><span>Paid</span><strong>${formatMoney(item.final_amount_paid)}</strong></div>
+    <div class="transaction-stat"><span>Points</span><strong>${formatNumber(item.total_points)}</strong></div>
+    <div class="transaction-actions">
+      ${item.invoice_status === "uploaded" ? `<button class="secondary compact" data-view-invoice="${item.id}" type="button">View invoice</button>` : ""}
+      ${item.invoice_status === "uploaded" ? `<button class="secondary compact" data-download-invoice="${item.id}" data-invoice-name="${escapeHtml(item.invoice?.filename || "invoice")}" type="button">Download</button><button class="danger-button compact" data-delete-invoice="${item.id}" type="button">Delete invoice</button>` : ""}
+      ${invoiceUploadControl(item.id, item.invoice)}
+      <button class="danger-button compact" data-delete-transaction="${item.id}" type="button">Delete</button>
+    </div>
+    <details class="transaction-details">
+      <summary><span>View booking details</span><span class="details-chevron" aria-hidden="true">⌄</span></summary>
+      <div class="transaction-detail-grid">${transactionDetailsMarkup(item)}</div>
+    </details>
+  `;
+  return row;
+}
+
+function transactionSummary(item) {
+  const details = item.details || {};
+  const vendor = vendorDisplayName(item.vendor_id, item.travel_type);
+  if (item.travel_type === "flight") {
+    return {
+      title: [details.from, details.to].filter(Boolean).join(" → ") || "Flight booking",
+      metadata: [vendor, details.airline, details.flight_date ? formatDate(details.flight_date) : formatDate(item.paid_at)].filter(Boolean).join(" · "),
+      tags: [details.trip_region, details.trip_type, details.outbound_cabin_class || details.flight_class].filter(Boolean),
+    };
+  }
+  if (item.travel_type === "hotel") {
+    return {
+      title: details.hotel_name || details.city || "Hotel booking",
+      metadata: [vendor, details.city, details.check_in ? `Check-in ${formatDate(details.check_in)}` : formatDate(item.paid_at)].filter(Boolean).join(" · "),
+      tags: [details.hotel_state].filter(Boolean),
+    };
+  }
+  return { title: vendor, metadata: `Voucher purchase · ${formatDate(item.paid_at)}`, tags: [] };
+}
+
+function vendorDisplayName(vendorId, travelType) {
+  return vendorsByType[travelType]?.find((vendor) => vendor.id === vendorId)?.name || vendorId || "Booking platform";
+}
+
+function transactionDetailsMarkup(item) {
+  const details = item.details || {};
+  const rows = [];
+  const add = (label, value) => {
+    if (value !== undefined && value !== null && value !== "") {
+      rows.push(`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`);
+    }
+  };
+  add("Booking platform", vendorDisplayName(item.vendor_id, item.travel_type));
+  add("Booking date", formatDate(item.paid_at));
+  if (item.travel_type === "flight") {
+    add("Route", [details.from, details.to].filter(Boolean).join(" → "));
+    add("Airline", details.airline);
+    add("Trip type", details.trip_type);
+    add("Cabin", details.outbound_cabin_class || details.flight_class);
+    add("Flight date", details.flight_date ? formatDate(details.flight_date) : "");
+    add("Outbound flight", savedFlightLegSummary(details, "outbound"));
+    add("Inbound flight", savedFlightLegSummary(details, "return"));
+  } else if (item.travel_type === "hotel") {
+    add("Hotel", details.hotel_name);
+    add("City", details.city);
+    add("Check-in", details.check_in ? formatDate(details.check_in) : "");
+    add("Check-out", details.check_out ? formatDate(details.check_out) : "");
+  }
+  if (details.checkout_value || details.voucher_purchase_amount_paid || details.voucher_amount_paid || details.card_balance_paid || details.cash_amount_paid) {
+    add("Booking value", details.checkout_value ? formatMoney(details.checkout_value) : "");
+    add("Voucher value used", details.voucher_face_value_used ? formatMoney(details.voucher_face_value_used) : "");
+    add("Voucher purchase cost", formatMoney(details.voucher_purchase_amount_paid || details.voucher_amount_paid || 0));
+    add("Direct card balance", formatMoney(details.card_balance_paid || details.cash_amount_paid || 0));
+  }
+  add("GST credit", formatMoney(item.gst_credit || 0));
+  add("Tax benefit", formatMoney(item.tax_benefit || 0));
+  if (Number(item.points_used || 0)) add("Points used", formatNumber(item.points_used));
+  return rows.join("");
 }
 
 function invoiceUploadControl(transactionId, invoice) {
@@ -2295,41 +2365,6 @@ function formatFileSize(bytes) {
   const value = Number(bytes || 0);
   if (value < 1024 * 1024) return `${Math.max(0, Math.round(value / 1024))} KB`;
   return `${(value / (1024 * 1024)).toFixed(value >= 100 * 1024 * 1024 ? 0 : 1)} MB`;
-}
-
-function transactionDetailLine(item) {
-  const details = item.details || {};
-  const parts = [
-    formatDate(item.paid_at),
-    item.travel_type,
-    details.vendor_name || item.vendor_id,
-  ];
-  if (item.travel_type === "flight") {
-    parts.push(`${details.from || ""} to ${details.to || ""}`.trim());
-    parts.push(details.trip_region);
-    parts.push(details.trip_type);
-    parts.push(details.airline);
-    parts.push(details.flight_date ? `Flight date: ${details.flight_date}` : "");
-    parts.push(details.return_flight_date ? `Return flight date: ${details.return_flight_date}` : "");
-    const outboundSummary = savedFlightLegSummary(details, "outbound");
-    const returnSummary = savedFlightLegSummary(details, "return");
-    parts.push(outboundSummary ? `Outbound flight: ${outboundSummary}` : "");
-    parts.push(returnSummary ? `Inbound flight: ${returnSummary}` : "");
-  } else if (item.travel_type === "hotel") {
-    parts.push(details.city);
-    parts.push(details.hotel_name);
-    parts.push(details.check_in ? `Check-in: ${details.check_in}` : "");
-    parts.push(details.check_in_time ? `Check-in time: ${details.check_in_time}` : "");
-    parts.push(details.check_out ? `Check-out: ${details.check_out}` : "");
-    parts.push(details.check_out_time ? `Check-out time: ${details.check_out_time}` : "");
-  }
-  if (details.voucher_purchase_amount_paid || details.card_balance_paid || details.voucher_amount_paid || details.cash_amount_paid) {
-    if (details.checkout_value) parts.push(`Booking value: ${formatMoney(details.checkout_value)}`);
-    if (details.voucher_face_value_used) parts.push(`Voucher value used: ${formatMoney(details.voucher_face_value_used)}`);
-    parts.push(`Voucher purchase cost: ${formatMoney(details.voucher_purchase_amount_paid || details.voucher_amount_paid || 0)}`);
-    parts.push(`Direct card balance: ${formatMoney(details.card_balance_paid || details.cash_amount_paid || 0)}`);
-  }
-  return parts.filter(Boolean).join(" - ");
 }
 
 setupTabs();
