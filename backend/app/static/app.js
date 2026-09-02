@@ -2134,7 +2134,6 @@ function transactionRow(item, transactionNumber) {
       <div class="transaction-copy">
         <div class="transaction-title-row">
           <strong>${transactionNumber}. ${escapeHtml(card)}</strong>
-          <span class="invoice-status ${item.invoice_status === "uploaded" ? "is-uploaded" : ""}">Invoice ${item.invoice_status === "uploaded" ? "uploaded" : "pending"}</span>
         </div>
         <h4>${escapeHtml(summary.title)}</h4>
         <p>${escapeHtml(summary.metadata)}</p>
@@ -2145,10 +2144,8 @@ function transactionRow(item, transactionNumber) {
     <div class="transaction-stat"><span>Paid</span><strong>${formatMoney(item.final_amount_paid)}</strong></div>
     <div class="transaction-stat"><span>Points</span><strong>${formatNumber(item.total_points)}</strong></div>
     <div class="transaction-actions">
-      ${item.invoice_status === "uploaded" ? `<button class="secondary compact" data-view-invoice="${item.id}" type="button">View invoice</button>` : ""}
-      ${item.invoice_status === "uploaded" ? `<button class="secondary compact" data-download-invoice="${item.id}" data-invoice-name="${escapeHtml(item.invoice?.filename || "invoice")}" type="button">Download</button><button class="danger-button compact" data-delete-invoice="${item.id}" type="button">Delete invoice</button>` : ""}
-      ${invoiceUploadControl(item.id, item.invoice)}
-      <button class="danger-button compact" data-delete-transaction="${item.id}" type="button">Delete</button>
+      ${transactionInvoicePanel(item)}
+      <button class="transaction-delete-action" data-delete-transaction="${item.id}" type="button">Delete transaction</button>
     </div>
     <details class="transaction-details">
       <summary><span>View booking details</span><span class="details-chevron" aria-hidden="true">⌄</span></summary>
@@ -2156,6 +2153,27 @@ function transactionRow(item, transactionNumber) {
     </details>
   `;
   return row;
+}
+
+function transactionInvoicePanel(item) {
+  const uploaded = item.invoice_status === "uploaded";
+  const invoice = item.invoice;
+  return `
+    <section class="transaction-invoice-panel ${uploaded ? "is-uploaded" : "is-pending"}" aria-label="Invoice record">
+      <div class="transaction-invoice-heading">
+        <span class="invoice-panel-status ${uploaded ? "is-uploaded" : ""}">Invoice ${uploaded ? "uploaded" : "pending"}</span>
+        <small>${uploaded ? escapeHtml(invoice?.filename || "Invoice saved for audit") : "Optional audit record"}</small>
+      </div>
+      ${uploaded ? `
+        <div class="invoice-panel-actions">
+          <button class="secondary compact" data-view-invoice="${item.id}" type="button">View</button>
+          <button class="secondary compact" data-download-invoice="${item.id}" data-invoice-name="${escapeHtml(invoice?.filename || "invoice")}" type="button">Download</button>
+          <button class="invoice-text-action" data-delete-invoice="${item.id}" type="button">Remove invoice</button>
+        </div>
+      ` : ""}
+      <div class="invoice-panel-upload">${invoiceUploadControl(item.id, invoice)}</div>
+    </section>
+  `;
 }
 
 function transactionSummary(item) {
