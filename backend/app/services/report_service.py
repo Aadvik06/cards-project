@@ -100,19 +100,19 @@ class ReportService:
     def _summary_section(self, rows: list[dict], styles: dict) -> list:
         totals = self._totals(rows)
         data = [
-            ["Transactions", "Total paid", "Reward points", "Bonus points", "Point value", "Net cost"],
+            ["Transactions", "Total paid", "Reward points", "GST credit", "Tax benefit", "Net cost"],
             [
                 str(totals["count"]),
                 self._money(totals["paid"]),
                 self._number(totals["points"]),
-                self._number(totals["bonus"]),
-                self._money(totals["point_value"]),
+                self._money(totals["gst_credit"]),
+                self._money(totals["tax_benefit"]),
                 self._money(totals["net_cost"]),
             ],
         ]
         return [
             Paragraph("Summary", styles["Heading2"]),
-            self._table(data, widths=[32, 36, 36, 36, 36, 36]),
+            self._table(data, widths=[32, 40, 36, 36, 36, 40]),
             Spacer(1, 3 * mm),
         ]
 
@@ -184,6 +184,8 @@ class ReportService:
             "points": sum(float(row["total_points"]) for row in row_list),
             "bonus": sum(float(row["bonus_points"]) for row in row_list),
             "point_value": sum(float(row["points_value_rupees"]) for row in row_list),
+            "gst_credit": sum(float(row.get("gst_credit", 0)) for row in row_list),
+            "tax_benefit": sum(float(row.get("tax_benefit", 0)) for row in row_list),
             "net_cost": sum(float(row["net_cost"]) for row in row_list),
         }
 

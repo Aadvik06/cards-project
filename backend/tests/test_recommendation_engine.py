@@ -164,7 +164,8 @@ class RecommendationEngineTests(unittest.TestCase):
 
         self.assertTrue(option.gst_claimable)
         self.assertEqual(Decimal("500.00"), option.gst_credit)
-        self.assertEqual(Decimal("8251.75"), option.net_cost)
+        self.assertEqual(Decimal("5501.75"), option.net_cost)
+        self.assertEqual(Decimal("2750.00"), option.tax_benefit)
 
     def test_hotel_gst_credit_only_applies_in_company_registered_states(self) -> None:
         allowed = self.recommendations.create_recommendation(
@@ -196,7 +197,7 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(Decimal("1800.00"), allowed.gst_credit)
         self.assertFalse(blocked.gst_claimable)
         self.assertEqual(Decimal("0.00"), blocked.gst_credit)
-        self.assertEqual(Decimal("495.00"), blocked.tax_benefit)
+        self.assertEqual(Decimal("3245.00"), blocked.tax_benefit)
         self.assertLess(allowed.net_cost, blocked.net_cost)
 
     def test_non_claimable_flight_gst_gets_tax_benefit_on_gst_component(self) -> None:
@@ -217,7 +218,7 @@ class RecommendationEngineTests(unittest.TestCase):
 
         self.assertFalse(option.gst_claimable)
         self.assertEqual(Decimal("0.00"), option.gst_credit)
-        self.assertEqual(Decimal("137.50"), option.tax_benefit)
+        self.assertEqual(Decimal("2887.50"), option.tax_benefit)
 
     def test_finalized_history_reduces_future_available_caps(self) -> None:
         first = self.recommendations.create_recommendation(
@@ -297,6 +298,36 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertTrue(self.ledger.delete_transaction(transaction.id))
         self.assertEqual(0, len(self.ledger.read_transactions()))
 
+    def test_invoice_is_stored_with_pending_status_until_uploaded(self) -> None:
+        transaction = self.transactions.log_voucher_purchase(
+            employee_name="Ava Patel",
+            vendor_name="Office Supply Voucher",
+            final_amount_paid=Decimal("1000"),
+            paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            description="Invoice audit test.",
+        )
+        self.assertEqual("pending", self.ledger.read_transactions()[0]["invoice_status"])
+
+        saved = self.ledger.save_invoice(
+            transaction_id=transaction.id,
+            filename="invoice.pdf",
+            content_type="application/pdf",
+            content=b"%PDF-test",
+        )
+        invoice = self.ledger.get_invoice(transaction.id)
+
+        self.assertEqual("uploaded", saved["invoice_status"])
+        self.assertEqual("invoice.pdf", invoice["filename"])
+        self.assertEqual(b"%PDF-test", invoice["file_data"])
+        self.assertEqual("uploaded", self.ledger.read_transactions()[0]["invoice_status"])
+        storage = self.ledger.invoice_storage_summary(1024)
+        self.assertEqual(9, storage["used_bytes"])
+        self.assertEqual(1, storage["invoice_count"])
+        self.assertEqual(1015, storage["remaining_bytes"])
+        self.assertTrue(self.ledger.delete_invoice(transaction.id))
+        self.assertEqual("pending", self.ledger.read_transactions()[0]["invoice_status"])
+        self.assertEqual(0, self.ledger.invoice_storage_summary(1024)["used_bytes"])
+
     def test_multiple_drafts_are_saved_in_database(self) -> None:
         drafts = [
             self.ledger.save_draft(
@@ -359,7 +390,7 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(Decimal("300.0000"), transaction.base_points)
         self.assertEqual(Decimal("2646.0000"), transaction.bonus_points)
         self.assertEqual(Decimal("2946.0000"), transaction.total_points)
-        self.assertEqual(Decimal("7540.47"), transaction.net_cost)
+        self.assertEqual(Decimal("4869.04"), transaction.net_cost)
 
     def test_amex_travel_voucher_split_awards_bonus_only_on_voucher_purchase_cost(self) -> None:
         recommendation = self.recommendations.create_recommendation(
@@ -385,6 +416,58 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(Decimal("360.0000"), transaction.base_points)
         self.assertEqual(Decimal("2700.0000"), transaction.bonus_points)
         self.assertEqual(Decimal("3060.0000"), transaction.total_points)
+
+    def test_points_redeemed_reduce_rewardable_spend_for_hdfc(self) -> None:
+        recommendation = self.recommendations.create_recommendation(
+            employee_id="emp-redemption",
+            travel_type=TravelType.FLIGHT,
+            quotes=[QuoteInput("hdfc_smartbuy_flight", Decimal("10000"))],
+        )
+        selected = recommendation.ranked_options[0]
+
+        transaction = self.transactions.finalize_transaction(
+            recommendation_id=recommendation.id,
+            selected_option_id=selected.id,
+            final_amount_paid=Decimal("10000"),
+            points_used=Decimal("1000"),
+            paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            details={"description": "HDFC points redemption."},
+        )
+
+        self.assertEqual(Decimal("1000.0000"), transaction.points_used)
+        self.assertEqual(Decimal("299.7000"), transaction.base_points)
+        self.assertEqual(Decimal("1498.5000"), transaction.total_points)
+
+    def test_international_flight_estimates_gst_by_india_originating_sector_share(self) -> None:
+        def option_for(*, sector_count: int, flight_class: str = "Economy"):
+            return self.recommendations.create_recommendation(
+                employee_id=f"emp-international-{sector_count}-{flight_class}",
+                travel_type=TravelType.FLIGHT,
+                quotes=[
+                    QuoteInput(
+                        "hdfc_smartbuy_flight",
+                        Decimal("10500" if flight_class == "Economy" else "11800"),
+                        gst_invoice_available=True,
+                        origin_state="Maharashtra",
+                        destination_state="Outside India",
+                        flight_class=flight_class,
+                        flight_sector_count=sector_count,
+                    )
+                ],
+            ).ranked_options[0]
+
+        mumbai_to_dubai = option_for(sector_count=1)
+        mumbai_to_london_via_dubai = option_for(sector_count=2)
+        return_with_connections = option_for(sector_count=4)
+        premium_return = option_for(sector_count=2, flight_class="Business")
+
+        self.assertTrue(mumbai_to_dubai.foreign_transaction)
+        self.assertEqual(Decimal("500.00"), mumbai_to_dubai.gst_credit)
+        self.assertEqual(Decimal("250.00"), mumbai_to_london_via_dubai.gst_credit)
+        self.assertEqual(Decimal("125.00"), return_with_connections.gst_credit)
+        self.assertEqual(Decimal("0.18"), premium_return.gst_rate)
+        self.assertEqual(Decimal("900.00"), premium_return.gst_credit)
+        self.assertIn("50.0%", mumbai_to_london_via_dubai.gst_note)
 
 
 if __name__ == "__main__":

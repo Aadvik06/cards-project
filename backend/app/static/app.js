@@ -145,8 +145,7 @@ function numberOptions(start, end, emptyLabel) {
 function cabinClassSelect(id) {
   return `
     <select id="${id}">
-      <option value="">Select class</option>
-      <option value="Economy">Economy</option>
+      <option value="Economy" selected>Economy</option>
       <option value="Premium Economy">Premium Economy</option>
       <option value="Business">Business</option>
       <option value="First Class">First Class</option>
@@ -567,6 +566,10 @@ function formatNumber(value) {
   return Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 }
 
+function formatPercent(value) {
+  return `${Number(value || 0) * 100}%`;
+}
+
 function formatCardName(cardIdOrName) {
   return cardNames[cardIdOrName] || cardIdOrName || "";
 }
@@ -679,8 +682,16 @@ function renderTripDetails() {
     details.innerHTML = `
       <label>From<input id="fromCity" /></label>
       <label>From state/province${stateSelect("fromState")}</label>
+      <label class="outside-location is-hidden" data-outside-location="fromState">
+        Country / state outside India
+        <input id="fromOutsideLocation" placeholder="For example, Ontario, Canada" />
+      </label>
       <label>To<input id="toCity" /></label>
       <label>To state/province${stateSelect("toState")}</label>
+      <label class="outside-location is-hidden" data-outside-location="toState">
+        Country / state outside India
+        <input id="toOutsideLocation" placeholder="For example, California, USA" />
+      </label>
       <label>Flight date<input id="detailDate" type="date" /></label>
       <label>Return flight date<input id="returnFlightDate" class="inbound-only" type="date" /></label>
       <label>
@@ -694,6 +705,10 @@ function renderTripDetails() {
   } else if (state.travelType === "hotel") {
     details.innerHTML = `
       <label>Hotel state/province${stateSelect("hotelState")}</label>
+      <label class="outside-location is-hidden" data-outside-location="hotelState">
+        Country / state outside India
+        <input id="hotelOutsideLocation" placeholder="For example, Dubai, UAE" />
+      </label>
       <label>Check-in<input id="checkIn" type="date" /></label>
       <label>Check-out<input id="checkOut" type="date" /></label>
     `;
@@ -703,6 +718,22 @@ function renderTripDetails() {
       <label>Purchase date<input id="voucherDate" type="date" /></label>
     `;
   }
+  setupOutsideIndiaPrompts();
+}
+
+function setupOutsideIndiaPrompts() {
+  $$('[data-outside-location]').forEach((container) => {
+    const stateField = document.getElementById(container.dataset.outsideLocation);
+    const textField = container.querySelector("input");
+    const refresh = () => {
+      const isOutsideIndia = stateField?.value === "Outside India";
+      container.classList.toggle("is-hidden", !isOutsideIndia);
+      textField.required = isOutsideIndia;
+      if (!isOutsideIndia) textField.value = "";
+    };
+    stateField?.addEventListener("change", refresh);
+    refresh();
+  });
 }
 
 function renderVendorRows() {
@@ -896,8 +927,17 @@ function collectQuotes() {
       if (state.travelType === "flight" && (!$("#fromState")?.value || !$("#toState")?.value)) {
         throw new Error("Select from and to state/province before calculating flight recommendations.");
       }
+      if (state.travelType === "flight" && $("#fromState")?.value === "Outside India" && !$("#fromOutsideLocation")?.value.trim()) {
+        throw new Error("Enter the origin country or state outside India.");
+      }
+      if (state.travelType === "flight" && $("#toState")?.value === "Outside India" && !$("#toOutsideLocation")?.value.trim()) {
+        throw new Error("Enter the destination country or state outside India.");
+      }
       if (state.travelType === "hotel" && !$("#hotelState")?.value) {
         throw new Error("Select the hotel state/province before calculating hotel recommendations.");
+      }
+      if (state.travelType === "hotel" && $("#hotelState")?.value === "Outside India" && !$("#hotelOutsideLocation")?.value.trim()) {
+        throw new Error("Enter the hotel country or state outside India.");
       }
       if (isAmexTravelVoucherVendor(vendor.id) && voucherFaceValue <= 0) {
         throw new Error("Enter the voucher value for each Amex voucher option with a price.");
@@ -914,10 +954,21 @@ function collectQuotes() {
         origin_state: state.travelType === "flight" ? $("#fromState")?.value || null : null,
         destination_state: state.travelType === "flight" ? $("#toState")?.value || null : null,
         hotel_state: state.travelType === "hotel" ? $("#hotelState")?.value || null : null,
+        flight_class: state.travelType === "flight"
+          ? $(`#${vendor.id}_outbound_cabin_class`)?.value || "Economy"
+          : null,
+        flight_sector_count: state.travelType === "flight" ? flightSectorCount(vendor.id) : 1,
       });
     }
   });
   return quotes;
+}
+
+function flightSectorCount(vendorId) {
+  const outboundSegments = $(`#${vendorId}_layover`)?.value === "Yes" ? 2 : 1;
+  if ($("#flightTripType")?.value === "One way") return outboundSegments;
+  const inboundSegments = $(`#${vendorId}_return_layover`)?.value === "Yes" ? 2 : 1;
+  return outboundSegments + inboundSegments;
 }
 
 function collectDetails() {
@@ -960,8 +1011,10 @@ function collectDetails() {
       trip_type: $("#flightTripType")?.value || "",
       from: $("#fromCity")?.value.trim() || "",
       from_state: $("#fromState")?.value || "",
+      from_outside_location: $("#fromOutsideLocation")?.value.trim() || "",
       to: $("#toCity")?.value.trim() || "",
       to_state: $("#toState")?.value || "",
+      to_outside_location: $("#toOutsideLocation")?.value.trim() || "",
       flight_date: $("#detailDate")?.value || "",
       return_flight_date: $("#returnFlightDate")?.value || "",
       gst_invoice_available: selectedVendorId ? document.querySelector(`[data-vendor-gst="${selectedVendorId}"]`)?.checked || false : false,
@@ -973,6 +1026,7 @@ function collectDetails() {
       hotel_name: selectedVendorId ? $(`#${selectedVendorId}_hotel`)?.value.trim() || "" : "",
       city: $("#hotelCity")?.value.trim() || "",
       hotel_state: $("#hotelState")?.value || "",
+      hotel_outside_location: $("#hotelOutsideLocation")?.value.trim() || "",
       check_in: $("#checkIn")?.value || "",
       check_in_time: selectedVendorId ? $(`#${selectedVendorId}_check_in_time`)?.value || "" : "",
       check_out: $("#checkOut")?.value || "",
@@ -1115,7 +1169,7 @@ function optionCard(option, isBest) {
   const button = isBest
     ? `<button class="primary" type="button" data-accept-option="${option.id}">${isBankTransfer ? "Use this option" : "Use this card"}</button>`
     : `<button class="secondary" type="button" data-decline-option="${option.id}">Choose this instead</button>`;
-  const netCostLabel = isBankTransfer ? "Effective cost" : "Effective cost after points + GST";
+  const netCostLabel = "Net cost after points, GST, and tax";
   const voucherMath = voucherMathDetails(option);
 
   return `
@@ -1132,13 +1186,16 @@ function optionCard(option, isBest) {
       ${optionDecisionDetails(option)}
       ${voucherMath}
       <div class="metric-grid">
+        <div class="metric"><span>Total booking cost</span><strong>${formatMoney(option.listed_amount)}</strong></div>
         <div class="metric feature"><span>Cash to pay</span><strong>${formatMoney(option.price_after_discount)}</strong></div>
         <div class="metric"><span>${netCostLabel}</span><strong>${formatMoney(option.net_cost)}</strong></div>
         <div class="metric"><span>Total points</span><strong>${formatNumber(option.total_points)}</strong></div>
         <div class="metric"><span>Point value</span><strong>${formatMoney(option.points_value_rupees)}</strong></div>
-        <div class="metric"><span>GST credit</span><strong>${formatMoney(option.gst_credit || 0)}</strong></div>
-        <div class="metric"><span>Tax benefit</span><strong>${formatMoney(option.tax_benefit || 0)}</strong></div>
+        <div class="metric"><span>GST itinerary rate</span><strong>${formatPercent(option.gst_rate)}</strong></div>
+        <div class="metric"><span>Estimated GST credit</span><strong>${formatMoney(option.gst_credit || 0)}</strong></div>
+        <div class="metric"><span>Tax benefit (27.5%)</span><strong>${formatMoney(option.tax_benefit || 0)}</strong></div>
       </div>
+      <p class="gst-estimate-note">${escapeHtml(option.gst_note || "Invoice will confirm GST treatment.")}</p>
     </article>
   `;
 }
@@ -1241,9 +1298,11 @@ function comparisonRowValue(option, rowKey) {
       : "-";
   }
   if (rowKey === "Direct card balance") return isAmexTravelVoucherOption(option) ? formatMoney(option.cash_component) : "-";
+  if (rowKey === "Total booking cost") return formatMoney(option.listed_amount);
   if (rowKey === "Cash to pay") return formatMoney(option.price_after_discount);
+  if (rowKey === "GST rate") return formatPercent(option.gst_rate);
   if (rowKey === "GST credit") return formatMoney(option.gst_credit || 0);
-  if (rowKey === "Tax benefit") return formatMoney(option.tax_benefit || 0);
+  if (rowKey === "Tax benefit" || rowKey === "Tax benefit (27.5%)") return formatMoney(option.tax_benefit || 0);
   if (rowKey === "GST status") return option.gst_claimable ? "Claimable" : "Not claimable";
   if (rowKey === "Net cost") return formatMoney(option.net_cost);
   if (rowKey === "Total points") return formatNumber(option.total_points);
@@ -1272,11 +1331,13 @@ function setupChoicePdf() {
       "Vendor",
       ...(state.travelType === "flight" ? ["Airline", "Outbound flight", "Inbound flight"] : []),
       ...(state.travelType === "hotel" ? ["Hotel", "Check-in time", "Check-out time"] : []),
+      "Total booking cost",
       "Cash to pay",
       "Total points",
       "Point value",
       "GST credit",
-      "Tax benefit",
+      "GST rate",
+      "Tax benefit (27.5%)",
       "GST status",
       "Net cost",
     ].map((label) => `
@@ -1515,12 +1576,16 @@ function setupDeclineActions() {
 function renderFinalize() {
   const option = state.selectedOption;
   const usesVoucherSplit = isAmexTravelVoucherOption(option);
+  const allowsPointsRedemption = isPointRedemptionCard(option);
   $("#selectedSummary").innerHTML = `
     <strong>${option.card_name}</strong>
     <span>${option.vendor_name}</span>
     <span>Expected amount: ${formatMoney(option.price_after_discount)}</span>
   `;
   $("#finalAmount").value = Number(option.price_after_discount).toFixed(2);
+  $("#finalAmountLabel").textContent = allowsPointsRedemption ? "Final booking total before points" : "Final amount paid";
+  $("#pointsRedemptionBox").classList.toggle("is-hidden", !allowsPointsRedemption);
+  if (!allowsPointsRedemption) $("#rewardPointsUsed").value = "0";
   $("#amexSplitBox").classList.toggle("is-hidden", !usesVoucherSplit);
   ["#voucherFaceValueUsed", "#voucherPurchaseAmountPaid", "#cardBalancePaid"].forEach((selector) => {
     $(selector).required = usesVoucherSplit;
@@ -1540,6 +1605,10 @@ function isAmexTravelVoucherOption(option) {
   return Boolean(option?.card_id === "amex" && amexTravelVoucherVendors.has(option.vendor_id));
 }
 
+function isPointRedemptionCard(option) {
+  return Boolean(option && ["hdfc_infinia", "icici_times_black"].includes(option.card_id));
+}
+
 function isAmexTravelVoucherVendor(vendorId) {
   return amexTravelVoucherVendors.has(vendorId);
 }
@@ -1551,6 +1620,13 @@ function setupFinalForm() {
     const details = collectDetails();
     if (!details.description) {
       showToast("Add a short description before saving.", true);
+      return;
+    }
+    const pointsUsed = isPointRedemptionCard(state.selectedOption)
+      ? Number($("#rewardPointsUsed").value || 0)
+      : 0;
+    if (pointsUsed < 0 || !Number.isFinite(pointsUsed)) {
+      showToast("Enter a valid number of reward points used.", true);
       return;
     }
     if (isAmexTravelVoucherOption(state.selectedOption)) {
@@ -1583,6 +1659,7 @@ function setupFinalForm() {
             selected_option_id: state.selectedOption.id,
             final_amount_paid: $("#finalAmount").value,
             paid_at: paidAt,
+            points_used: String(pointsUsed),
             details,
           });
       renderDone(transaction);
@@ -1608,11 +1685,15 @@ function renderDone(transaction) {
     <div class="metric-grid">
       <div class="metric"><span>Final amount</span><strong>${formatMoney(transaction.final_amount_paid)}</strong></div>
       <div class="metric"><span>Points</span><strong>${formatNumber(transaction.total_points)}</strong></div>
+      ${Number(transaction.points_used || 0) ? `<div class="metric"><span>Points used</span><strong>${formatNumber(transaction.points_used)}</strong></div>` : ""}
+      <div class="metric"><span>GST credit</span><strong>${formatMoney(transaction.gst_credit || 0)}</strong></div>
+      <div class="metric"><span>Tax benefit</span><strong>${formatMoney(transaction.tax_benefit || 0)}</strong></div>
       <div class="metric"><span>Net cost</span><strong>${formatMoney(transaction.net_cost)}</strong></div>
       <div class="metric"><span>Status</span><strong>Logged</strong></div>
       ${splitLine}
     </div>
   `;
+  renderInvoiceUpload(transaction.id, null, "#completedInvoicePanel");
 }
 
 function currentPanelName() {
@@ -1760,18 +1841,14 @@ function setupReports() {
 async function downloadReport(url) {
   try {
     setStatus("Generating report");
+    const reportWindow = window.open("", "_blank");
+    if (!reportWindow) throw new Error("Allow pop-ups to open the report in a full browser tab.");
     const response = await fetch(url, { headers: await authHeaders() });
     if (!response.ok) throw new Error("Could not generate report.");
     const blob = await response.blob();
     const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = objectUrl;
-    link.download = "";
-    link.target = "_blank";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    reportWindow.location.replace(objectUrl);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 300000);
     setStatus("Ready");
   } catch (error) {
     setStatus("Ready");
@@ -1790,19 +1867,46 @@ async function loadTransactions() {
   try {
     setStatus("Loading");
     const headers = await authHeaders();
-    const [summaryResponse, transactionsResponse] = await Promise.all([
+    const [summaryResponse, transactionsResponse, storageResponse] = await Promise.all([
       fetch("/logs/summary", { headers }),
       fetch("/transactions", { headers }),
+      fetch("/invoices/storage-summary", { headers }),
     ]);
+    if (!summaryResponse.ok || !transactionsResponse.ok || !storageResponse.ok) {
+      throw new Error("Could not load transaction history.");
+    }
     const summary = await summaryResponse.json();
     const transactions = await transactionsResponse.json();
+    const storage = await storageResponse.json();
     renderSummary(summary);
+    renderInvoiceStorage(storage);
     renderTransactions(transactions);
     setStatus("Ready");
   } catch (error) {
     setStatus("Ready");
     showToast("Could not load past transactions.", true);
   }
+}
+
+function renderInvoiceStorage(storage) {
+  const used = Number(storage.used_bytes || 0);
+  const allocation = Number(storage.allocation_bytes || 1);
+  const percent = Math.min((used / allocation) * 100, 100);
+  const tone = percent >= 95 ? "is-critical" : percent >= 80 ? "is-warning" : "";
+  const message = percent >= 95
+    ? "Archive invoices to your computer, then delete them here to keep the system working."
+    : percent >= 80
+      ? "Archive older invoices soon so there is room for new bookings."
+      : "Invoices can be downloaded and removed after you archive them locally.";
+  $("#invoiceStoragePanel").innerHTML = `
+    <div class="invoice-storage-copy">
+      <p class="eyebrow">Invoice archive</p>
+      <h3>${formatFileSize(used)} used of ${formatFileSize(allocation)} reserved</h3>
+      <p>${formatNumber(storage.invoice_count || 0)} invoice${Number(storage.invoice_count || 0) === 1 ? "" : "s"} stored · ${formatFileSize(storage.remaining_bytes || 0)} remaining</p>
+    </div>
+    <div class="storage-meter ${tone}" aria-label="${percent.toFixed(0)} percent of invoice storage used"><span style="width: ${percent}%"></span></div>
+    <p class="storage-note ${tone}">${message}</p>
+  `;
 }
 
 async function loadDrafts() {
@@ -1973,6 +2077,7 @@ function renderTransactions(transactions) {
       }
     });
   });
+  setupInvoiceActions();
 }
 
 function compareTransactions(first, second) {
@@ -2029,12 +2134,167 @@ function transactionRow(item, transactionNumber) {
         <strong>${transactionNumber}. ${card}</strong>
         <span>${detailLine}</span>
         <small>${details.description || ""}</small>
+        <small class="invoice-status ${item.invoice_status === "uploaded" ? "is-uploaded" : ""}">Invoice: ${item.invoice_status === "uploaded" ? "uploaded" : "pending"}</small>
       </div>
       <div><span>Paid</span><strong>${formatMoney(item.final_amount_paid)}</strong></div>
       <div><span>Points</span><strong>${formatNumber(item.total_points)}</strong></div>
-      <button class="danger-button compact" data-delete-transaction="${item.id}" type="button">Delete</button>
+      <div class="transaction-actions">
+        ${item.invoice_status === "uploaded" ? `<button class="secondary compact" data-view-invoice="${item.id}" type="button">View invoice</button>` : ""}
+        ${item.invoice_status === "uploaded" ? `<button class="secondary compact" data-download-invoice="${item.id}" data-invoice-name="${escapeHtml(item.invoice?.filename || "invoice")}" type="button">Download</button><button class="danger-button compact" data-delete-invoice="${item.id}" type="button">Delete invoice</button>` : ""}
+        ${invoiceUploadControl(item.id, item.invoice)}
+        <button class="danger-button compact" data-delete-transaction="${item.id}" type="button">Delete</button>
+      </div>
     `;
     return row;
+}
+
+function invoiceUploadControl(transactionId, invoice) {
+  return `
+    <div class="invoice-upload-control">
+      <label class="invoice-file-input">
+        <input data-invoice-file="${transactionId}" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" />
+        <span class="invoice-file-icon" aria-hidden="true">↑</span>
+        <span class="invoice-file-copy">
+          <strong>${invoice ? "Choose a replacement" : "Choose invoice"}</strong>
+          <small data-invoice-file-label="${transactionId}">PDF, JPG, PNG or WEBP · up to 10 MB</small>
+        </span>
+      </label>
+      <button class="primary compact" data-save-invoice="${transactionId}" type="button">${invoice ? "Replace invoice" : "Upload invoice"}</button>
+    </div>
+  `;
+}
+
+function renderInvoiceUpload(transactionId, invoice, targetSelector) {
+  const target = $(targetSelector);
+  target.innerHTML = `
+    <div class="invoice-upload-copy">
+      <strong>Invoice ${invoice ? "uploaded" : "pending"}</strong>
+      <span>${invoice ? escapeHtml(invoice.filename) : "Optional: upload a PDF or image for the audit record."}</span>
+    </div>
+    <div class="invoice-upload-actions">
+      ${invoice ? `<button class="secondary compact" data-view-invoice="${transactionId}" type="button">View invoice</button>` : ""}
+      ${invoice ? `<button class="secondary compact" data-download-invoice="${transactionId}" data-invoice-name="${escapeHtml(invoice.filename)}" type="button">Download</button><button class="danger-button compact" data-delete-invoice="${transactionId}" type="button">Delete invoice</button>` : ""}
+      ${invoiceUploadControl(transactionId, invoice)}
+    </div>
+  `;
+  setupInvoiceActions();
+}
+
+function setupInvoiceActions() {
+  $$("[data-invoice-file]").forEach((input) => {
+    if (input.dataset.bound) return;
+    input.dataset.bound = "true";
+    input.addEventListener("change", () => {
+      const label = document.querySelector(`[data-invoice-file-label="${input.dataset.invoiceFile}"]`);
+      const file = input.files?.[0];
+      if (label) label.textContent = file ? `${file.name} · ${formatFileSize(file.size)}` : "PDF, JPG, PNG or WEBP · up to 10 MB";
+    });
+  });
+  $$("[data-save-invoice]").forEach((button) => {
+    if (button.dataset.bound) return;
+    button.dataset.bound = "true";
+    button.addEventListener("click", async () => {
+      const transactionId = button.dataset.saveInvoice;
+      const file = document.querySelector(`[data-invoice-file="${transactionId}"]`)?.files?.[0];
+      if (!file) {
+        showToast("Choose an invoice file first.", true);
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        showToast("Invoice files must be 10 MB or smaller.", true);
+        return;
+      }
+      try {
+        setStatus("Uploading invoice");
+        const formData = new FormData();
+        formData.append("invoice", file);
+        const response = await fetch(`/transactions/${transactionId}/invoice`, {
+          method: "POST",
+          headers: await authHeaders(),
+          body: formData,
+        });
+        const data = await readResponseBody(response);
+        if (!response.ok) throw new Error(data.detail || "Could not upload the invoice.");
+        setStatus("Saved");
+        showToast("Invoice uploaded.");
+        if ($("#transactionsView").classList.contains("is-hidden")) {
+          renderInvoiceUpload(transactionId, data, "#completedInvoicePanel");
+        } else {
+          await loadTransactions();
+        }
+      } catch (error) {
+        setStatus("Ready");
+        showToast(error.message, true);
+      }
+    });
+  });
+  $$("[data-view-invoice]").forEach((button) => {
+    if (button.dataset.bound) return;
+    button.dataset.bound = "true";
+    button.addEventListener("click", () => viewInvoice(button.dataset.viewInvoice));
+  });
+  $$("[data-download-invoice]").forEach((button) => {
+    if (button.dataset.bound) return;
+    button.dataset.bound = "true";
+    button.addEventListener("click", () => downloadInvoice(button.dataset.downloadInvoice, button.dataset.invoiceName));
+  });
+  $$("[data-delete-invoice]").forEach((button) => {
+    if (button.dataset.bound) return;
+    button.dataset.bound = "true";
+    button.addEventListener("click", async () => {
+      if (!window.confirm("Delete this invoice after you have downloaded and archived it? The transaction will remain.")) return;
+      try {
+        setStatus("Deleting invoice");
+        await deleteJson(`/transactions/${button.dataset.deleteInvoice}/invoice`);
+        showToast("Invoice deleted. The transaction was kept.");
+        if ($("#transactionsView").classList.contains("is-hidden")) {
+          renderInvoiceUpload(button.dataset.deleteInvoice, null, "#completedInvoicePanel");
+        } else {
+          await loadTransactions();
+        }
+      } catch (error) {
+        setStatus("Ready");
+        showToast(error.message, true);
+      }
+    });
+  });
+}
+
+async function viewInvoice(transactionId) {
+  try {
+    const invoiceWindow = window.open("", "_blank");
+    if (!invoiceWindow) throw new Error("Allow pop-ups to view the invoice.");
+    const response = await fetch(`/transactions/${transactionId}/invoice`, { headers: await authHeaders() });
+    if (!response.ok) throw new Error("Could not open the invoice.");
+    const objectUrl = URL.createObjectURL(await response.blob());
+    invoiceWindow.location.replace(objectUrl);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 300000);
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+async function downloadInvoice(transactionId, filename = "invoice") {
+  try {
+    const response = await fetch(`/transactions/${transactionId}/invoice`, { headers: await authHeaders() });
+    if (!response.ok) throw new Error("Could not download the invoice.");
+    const objectUrl = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = filename || "invoice";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 300000);
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+function formatFileSize(bytes) {
+  const value = Number(bytes || 0);
+  if (value < 1024 * 1024) return `${Math.max(0, Math.round(value / 1024))} KB`;
+  return `${(value / (1024 * 1024)).toFixed(value >= 100 * 1024 * 1024 ? 0 : 1)} MB`;
 }
 
 function transactionDetailLine(item) {

@@ -25,6 +25,8 @@ class QuoteRequest(BaseModel):
     origin_state: str | None = None
     destination_state: str | None = None
     hotel_state: str | None = None
+    flight_class: str | None = None
+    flight_sector_count: int = Field(default=1, ge=1, le=4)
 
     def to_domain(self) -> QuoteInput:
         return QuoteInput(
@@ -38,6 +40,8 @@ class QuoteRequest(BaseModel):
             origin_state=self.origin_state,
             destination_state=self.destination_state,
             hotel_state=self.hotel_state,
+            flight_class=self.flight_class,
+            flight_sector_count=self.flight_sector_count,
         )
 
 
@@ -68,8 +72,11 @@ class RecommendationOptionResponse(BaseModel):
     capped_bonus_points: Decimal
     total_points: Decimal
     points_value_rupees: Decimal
+    gst_rate: Decimal
     gst_credit: Decimal
     tax_benefit: Decimal
+    deductible_expense: Decimal
+    foreign_transaction: bool
     gst_claimable: bool
     gst_note: str
     net_cost: Decimal
@@ -146,6 +153,7 @@ class FinalizeTransactionRequest(BaseModel):
     selected_card_id: str | None = None
     selected_vendor_id: str | None = None
     paid_at: datetime | None = None
+    points_used: Decimal = Field(default=Decimal("0"), ge=0)
     details: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -170,6 +178,12 @@ class TransactionResponse(BaseModel):
     bonus_points: Decimal
     total_points: Decimal
     points_value_rupees: Decimal
+    points_used: Decimal
+    gst_rate: Decimal
+    gst_credit: Decimal
+    tax_benefit: Decimal
+    deductible_expense: Decimal
+    foreign_transaction: bool
     net_cost: Decimal
     paid_at: datetime
     details: dict[str, Any] = Field(default_factory=dict)

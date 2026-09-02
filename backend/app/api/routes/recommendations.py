@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 
 from app.api.dependencies import (
     get_monthly_log_service,
@@ -7,6 +7,7 @@ from app.api.dependencies import (
     get_transaction_service,
 )
 from app.core.errors import OptimizerError
+from app.data.repositories.audit_ledger import InvoiceStorageLimitError
 from app.schemas.recommendation import (
     DecisionRequest,
     DecisionResponse,
@@ -21,6 +22,9 @@ from app.schemas.recommendation import (
 
 
 router = APIRouter()
+MAX_INVOICE_SIZE_BYTES = 10 * 1024 * 1024
+INVOICE_ARCHIVE_ALLOCATION_BYTES = 400 * 1024 * 1024
+ALLOWED_INVOICE_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
 
 
 @router.post("/recommendations", response_model=RecommendationResponse)
@@ -67,6 +71,7 @@ def finalize_transaction(
             selected_card_id=payload.selected_card_id,
             selected_vendor_id=payload.selected_vendor_id,
             paid_at=payload.paid_at,
+            points_used=payload.points_used,
             details=payload.details,
         )
         return TransactionResponse.from_domain(transaction)
@@ -96,11 +101,60 @@ def get_transactions() -> list[dict]:
     return get_monthly_log_service().get_all_transactions()
 
 
+@router.get("/invoices/storage-summary")
+def get_invoice_storage_summary() -> dict:
+    return get_monthly_log_service().ledger.invoice_storage_summary(INVOICE_ARCHIVE_ALLOCATION_BYTES)
+
+
 @router.delete("/transactions/{transaction_id}")
 def delete_transaction(transaction_id: str) -> dict:
     deleted = get_monthly_log_service().delete_transaction(transaction_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Transaction not found.")
+    return {"deleted": True, "transaction_id": transaction_id}
+
+
+@router.post("/transactions/{transaction_id}/invoice")
+async def upload_invoice(transaction_id: str, invoice: UploadFile = File(...)) -> dict:
+    if invoice.content_type not in ALLOWED_INVOICE_TYPES:
+        raise HTTPException(status_code=400, detail="Upload a PDF, JPG, PNG, or WEBP invoice.")
+    content = await invoice.read(MAX_INVOICE_SIZE_BYTES + 1)
+    if not content:
+        raise HTTPException(status_code=400, detail="The invoice file is empty.")
+    if len(content) > MAX_INVOICE_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="Invoice files must be 10 MB or smaller.")
+    try:
+        return get_monthly_log_service().ledger.save_invoice(
+            transaction_id=transaction_id,
+            filename=invoice.filename or "invoice",
+            content_type=invoice.content_type,
+            content=content,
+            allocation_bytes=INVOICE_ARCHIVE_ALLOCATION_BYTES,
+        )
+    except InvoiceStorageLimitError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/transactions/{transaction_id}/invoice")
+def get_invoice(transaction_id: str) -> Response:
+    invoice = get_monthly_log_service().ledger.get_invoice(transaction_id)
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="No invoice has been uploaded for this transaction.")
+    filename = invoice["filename"].replace('"', "")
+    return Response(
+        content=invoice["file_data"],
+        media_type=invoice["content_type"],
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.delete("/transactions/{transaction_id}/invoice")
+def delete_invoice(transaction_id: str) -> dict:
+    deleted = get_monthly_log_service().ledger.delete_invoice(transaction_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="No invoice has been uploaded for this transaction.")
     return {"deleted": True, "transaction_id": transaction_id}
 
 

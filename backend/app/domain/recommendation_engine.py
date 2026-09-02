@@ -110,7 +110,15 @@ class RecommendationEngine:
         )
 
     def _agent_option(self, *, quote: QuoteInput, travel_type: TravelType) -> RecommendationOption:
-        gst_credit, tax_benefit, gst_claimable, gst_note = self.calculator._gst_credit(
+        (
+            gst_rate,
+            gst_credit,
+            tax_benefit,
+            deductible_expense,
+            gst_claimable,
+            foreign_transaction,
+            gst_note,
+        ) = self.calculator._tax_effects(
             quote=quote,
             travel_type=travel_type,
             gst_base_amount=quote.amount,
@@ -134,8 +142,11 @@ class RecommendationEngine:
             capped_bonus_points=points(Decimal("0")),
             total_points=points(Decimal("0")),
             points_value_rupees=money(Decimal("0")),
+            gst_rate=gst_rate,
             gst_credit=money(gst_credit),
             tax_benefit=money(tax_benefit),
+            deductible_expense=money(deductible_expense),
+            foreign_transaction=foreign_transaction,
             gst_claimable=gst_claimable,
             gst_note=gst_note,
             net_cost=money(quote.amount - gst_credit - tax_benefit),

@@ -24,6 +24,7 @@ class TransactionService:
         selected_card_id: str | None = None,
         selected_vendor_id: str | None = None,
         paid_at: datetime | None = None,
+        points_used: Decimal = Decimal("0"),
         details: dict[str, str] | None = None,
     ) -> TransactionRecord:
         recommendation = self.recommendation_service.get_recommendation(recommendation_id)
@@ -65,7 +66,15 @@ class TransactionService:
         paid_at = paid_at or datetime.now(UTC)
         original_quote = self._original_quote(recommendation, selected_vendor_id)
         if selected_card_id == AGENT_CARD_ID:
-            gst_credit, tax_benefit, _, _ = self.recommendation_service.engine.calculator._gst_credit(
+            (
+                gst_rate,
+                gst_credit,
+                tax_benefit,
+                deductible_expense,
+                _,
+                foreign_transaction,
+                _,
+            ) = self.recommendation_service.engine.calculator._tax_effects(
                 quote=original_quote,
                 travel_type=recommendation.travel_type,
                 gst_base_amount=final_amount_paid,
@@ -83,12 +92,25 @@ class TransactionService:
                 bonus_points=points(Decimal("0")),
                 total_points=points(Decimal("0")),
                 points_value_rupees=money(Decimal("0")),
+                points_used=points(Decimal("0")),
+                gst_rate=gst_rate,
+                gst_credit=money(gst_credit),
+                tax_benefit=money(tax_benefit),
+                deductible_expense=money(deductible_expense),
+                foreign_transaction=foreign_transaction,
                 net_cost=money(final_amount_paid - gst_credit - tax_benefit),
                 paid_at=paid_at,
                 details=details or {},
             )
             self.recommendation_service.ledger.append_transaction(transaction)
             return transaction
+
+        card = next(card for card in self.recommendation_service.cards if card.id == selected_card_id)
+        if points_used and selected_card_id not in {"hdfc_infinia", "icici_times_black"}:
+            raise InvalidDecisionError("Reward-point redemption can only be recorded for HDFC Infinia or ICICI Times Black.")
+        point_redemption_value = points_used * card.point_value_rupees
+        if point_redemption_value > final_amount_paid:
+            raise InvalidDecisionError("Reward points used cannot exceed the final booking amount.")
 
         if self._is_amex_voucher_vendor(selected_card_id, selected_vendor_id, details or {}):
             transaction = self._finalize_amex_voucher_split(
@@ -106,12 +128,14 @@ class TransactionService:
 
         final_quote = QuoteInput(
             vendor_id=selected_vendor_id,
-            amount=final_amount_paid,
+            amount=final_amount_paid - point_redemption_value,
             discount_rate=original_option.discount_rate,
             gst_invoice_available=original_quote.gst_invoice_available,
             origin_state=original_quote.origin_state,
             destination_state=original_quote.destination_state,
             hotel_state=original_quote.hotel_state,
+            flight_class=original_quote.flight_class,
+            flight_sector_count=original_quote.flight_sector_count,
         )
         final_recommendation = self.recommendation_service.engine.rank(
             employee_id=recommendation.employee_id,
@@ -123,6 +147,29 @@ class TransactionService:
             option
             for option in final_recommendation.ranked_options
             if option.card_id == selected_card_id and option.vendor_id == selected_vendor_id
+        )
+        tax_quote = QuoteInput(
+            vendor_id=selected_vendor_id,
+            amount=final_amount_paid,
+            gst_invoice_available=original_quote.gst_invoice_available,
+            origin_state=original_quote.origin_state,
+            destination_state=original_quote.destination_state,
+            hotel_state=original_quote.hotel_state,
+            flight_class=original_quote.flight_class,
+            flight_sector_count=original_quote.flight_sector_count,
+        )
+        (
+            gst_rate,
+            gst_credit,
+            tax_benefit,
+            deductible_expense,
+            _,
+            foreign_transaction,
+            _,
+        ) = self.recommendation_service.engine.calculator._tax_effects(
+            quote=tax_quote,
+            travel_type=recommendation.travel_type,
+            gst_base_amount=final_amount_paid,
         )
 
         transaction = TransactionRecord(
@@ -138,7 +185,13 @@ class TransactionService:
             bonus_points=final_option.awarded_bonus_points,
             total_points=final_option.total_points,
             points_value_rupees=final_option.points_value_rupees,
-            net_cost=final_option.net_cost,
+            points_used=points(points_used),
+            gst_rate=gst_rate,
+            gst_credit=money(gst_credit),
+            tax_benefit=money(tax_benefit),
+            deductible_expense=money(deductible_expense),
+            foreign_transaction=foreign_transaction,
+            net_cost=money(final_amount_paid - point_redemption_value - final_option.points_value_rupees - gst_credit - tax_benefit),
             paid_at=paid_at,
             details=details or {},
         )
@@ -206,8 +259,18 @@ class TransactionService:
             origin_state=original_quote.origin_state,
             destination_state=original_quote.destination_state,
             hotel_state=original_quote.hotel_state,
+            flight_class=original_quote.flight_class,
+            flight_sector_count=original_quote.flight_sector_count,
         )
-        gst_credit, tax_benefit, _, _ = self.recommendation_service.engine.calculator._gst_credit(
+        (
+            gst_rate,
+            gst_credit,
+            tax_benefit,
+            deductible_expense,
+            _,
+            foreign_transaction,
+            _,
+        ) = self.recommendation_service.engine.calculator._tax_effects(
             quote=gst_quote,
             travel_type=recommendation.travel_type,
             gst_base_amount=checkout_value,
@@ -226,6 +289,12 @@ class TransactionService:
             bonus_points=points(awarded_bonus_points),
             total_points=points(total_points),
             points_value_rupees=money(points_value_rupees),
+            points_used=points(Decimal("0")),
+            gst_rate=gst_rate,
+            gst_credit=money(gst_credit),
+            tax_benefit=money(tax_benefit),
+            deductible_expense=money(deductible_expense),
+            foreign_transaction=foreign_transaction,
             net_cost=money(split_total - points_value_rupees - gst_credit - tax_benefit),
             paid_at=paid_at,
             details=details,
@@ -285,6 +354,12 @@ class TransactionService:
             bonus_points=points(awarded_bonus_points),
             total_points=points(total_points),
             points_value_rupees=money(points_value_rupees),
+            points_used=points(Decimal("0")),
+            gst_rate=Decimal("0"),
+            gst_credit=money(Decimal("0")),
+            tax_benefit=money(Decimal("0")),
+            deductible_expense=money(Decimal("0")),
+            foreign_transaction=False,
             net_cost=money(final_amount_paid - points_value_rupees),
             paid_at=paid_at,
             details={"vendor_name": vendor_name, "description": description},

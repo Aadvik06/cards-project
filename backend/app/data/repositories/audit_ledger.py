@@ -18,6 +18,10 @@ from app.domain.models import (
 )
 
 
+class InvoiceStorageLimitError(ValueError):
+    """Raised when an invoice would exceed the reserved archive allocation."""
+
+
 class AuditLedger:
     def __init__(
         self,
@@ -60,9 +64,10 @@ class AuditLedger:
                     travel_type, listed_amount, eligible_amount, cash_component, discount_rate,
                     price_after_discount, base_points, raw_bonus_points, awarded_bonus_points,
                     capped_bonus_points, total_points, points_value_rupees, gst_credit,
-                    tax_benefit, gst_claimable, gst_note, net_cost,
+                    gst_rate, tax_benefit, deductible_expense, foreign_transaction,
+                    gst_claimable, gst_note, net_cost,
                     cap_remaining_after, explanation, card_rank
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
             )
             option_rows = [
@@ -119,6 +124,8 @@ class AuditLedger:
                     origin_state=quote.get("origin_state"),
                     destination_state=quote.get("destination_state"),
                     hotel_state=quote.get("hotel_state"),
+                    flight_class=quote.get("flight_class"),
+                    flight_sector_count=quote.get("flight_sector_count", 1),
                 )
                 for quote in json.loads(row["quotes_json"])
             ],
@@ -150,8 +157,9 @@ class AuditLedger:
                 INSERT INTO transactions (
                     id, recommendation_id, employee_id, travel_type, card_id, vendor_id,
                     final_amount_paid, discount_rate, base_points, bonus_points, total_points,
-                    points_value_rupees, net_cost, paid_at, details_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    points_value_rupees, points_used, gst_rate, gst_credit, tax_benefit,
+                    deductible_expense, foreign_transaction, net_cost, paid_at, details_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 ),
                 (
@@ -167,6 +175,12 @@ class AuditLedger:
                     str(transaction.bonus_points),
                     str(transaction.total_points),
                     str(transaction.points_value_rupees),
+                    str(transaction.points_used),
+                    str(transaction.gst_rate),
+                    str(transaction.gst_credit),
+                    str(transaction.tax_benefit),
+                    str(transaction.deductible_expense),
+                    int(transaction.foreign_transaction),
                     str(transaction.net_cost),
                     transaction.paid_at.isoformat(),
                     json.dumps(transaction.details),
@@ -204,7 +218,113 @@ class AuditLedger:
             rows = connection.execute(
                 "SELECT * FROM transactions ORDER BY paid_at ASC"
             ).fetchall()
-        return [self._dict(row) for row in rows]
+            invoices = connection.execute(
+                "SELECT transaction_id, filename, content_type, uploaded_at, LENGTH(file_data) AS file_size_bytes FROM transaction_invoices"
+            ).fetchall()
+        invoice_by_transaction = {row["transaction_id"]: self._dict(row) for row in invoices}
+        transactions = [self._dict(row) for row in rows]
+        for transaction in transactions:
+            invoice = invoice_by_transaction.get(transaction["id"])
+            transaction["invoice_status"] = "uploaded" if invoice else "pending"
+            transaction["invoice"] = invoice
+        return transactions
+
+    def invoice_storage_summary(self, allocation_bytes: int) -> dict[str, int]:
+        """Return invoice usage within the deliberately reserved archive allocation."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT COALESCE(SUM(LENGTH(file_data)), 0) AS used_bytes, COUNT(*) AS invoice_count FROM transaction_invoices"
+            ).fetchone()
+        used_bytes = int(row["used_bytes"] or 0)
+        return {
+            "used_bytes": used_bytes,
+            "invoice_count": int(row["invoice_count"] or 0),
+            "allocation_bytes": allocation_bytes,
+            "remaining_bytes": max(allocation_bytes - used_bytes, 0),
+        }
+
+    def save_invoice(
+        self,
+        *,
+        transaction_id: str,
+        filename: str,
+        content_type: str,
+        content: bytes,
+        allocation_bytes: int | None = None,
+    ) -> dict[str, Any]:
+        with self._connect() as connection:
+            exists = connection.execute(
+                self._sql("SELECT id FROM transactions WHERE id = ?"),
+                (transaction_id,),
+            ).fetchone()
+            if exists is None:
+                raise ValueError("Transaction not found.")
+            if allocation_bytes is not None:
+                previous = connection.execute(
+                    self._sql("SELECT LENGTH(file_data) AS file_size_bytes FROM transaction_invoices WHERE transaction_id = ?"),
+                    (transaction_id,),
+                ).fetchone()
+                totals = connection.execute(
+                    "SELECT COALESCE(SUM(LENGTH(file_data)), 0) AS used_bytes FROM transaction_invoices"
+                ).fetchone()
+                previous_size = int(previous["file_size_bytes"] or 0) if previous else 0
+                proposed_size = int(totals["used_bytes"] or 0) - previous_size + len(content)
+                if proposed_size > allocation_bytes:
+                    raise InvoiceStorageLimitError(
+                        "The invoice archive is full. Download and delete older invoices before uploading another file."
+                    )
+            uploaded_at = datetime.now().isoformat()
+            if self.database_url:
+                connection.execute(
+                    """
+                    INSERT INTO transaction_invoices (
+                        transaction_id, filename, content_type, file_data, uploaded_at
+                    ) VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (transaction_id) DO UPDATE SET
+                        filename = EXCLUDED.filename,
+                        content_type = EXCLUDED.content_type,
+                        file_data = EXCLUDED.file_data,
+                        uploaded_at = EXCLUDED.uploaded_at
+                    """,
+                    (transaction_id, filename, content_type, content, uploaded_at),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO transaction_invoices (
+                        transaction_id, filename, content_type, file_data, uploaded_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(transaction_id) DO UPDATE SET
+                        filename = excluded.filename,
+                        content_type = excluded.content_type,
+                        file_data = excluded.file_data,
+                        uploaded_at = excluded.uploaded_at
+                    """,
+                    (transaction_id, filename, content_type, content, uploaded_at),
+                )
+        return {
+            "transaction_id": transaction_id,
+            "filename": filename,
+            "content_type": content_type,
+            "uploaded_at": uploaded_at,
+            "invoice_status": "uploaded",
+        }
+
+    def get_invoice(self, transaction_id: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                self._sql("SELECT * FROM transaction_invoices WHERE transaction_id = ?"),
+                (transaction_id,),
+            ).fetchone()
+        return self._dict(row) if row is not None else None
+
+    def delete_invoice(self, transaction_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                self._sql("DELETE FROM transaction_invoices WHERE transaction_id = ?"),
+                (transaction_id,),
+            )
+            return cursor.rowcount > 0
 
     def delete_transaction(self, transaction_id: str) -> bool:
         with self._connect() as connection:
@@ -284,6 +404,15 @@ class AuditLedger:
             self._ensure_column(connection, "recommendation_options", "tax_benefit", "TEXT NOT NULL DEFAULT '0'")
             self._ensure_column(connection, "recommendation_options", "gst_claimable", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(connection, "recommendation_options", "gst_note", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(connection, "recommendation_options", "gst_rate", "TEXT NOT NULL DEFAULT '0'")
+            self._ensure_column(connection, "recommendation_options", "deductible_expense", "TEXT NOT NULL DEFAULT '0'")
+            self._ensure_column(connection, "recommendation_options", "foreign_transaction", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "transactions", "points_used", "TEXT NOT NULL DEFAULT '0'")
+            self._ensure_column(connection, "transactions", "gst_rate", "TEXT NOT NULL DEFAULT '0'")
+            self._ensure_column(connection, "transactions", "gst_credit", "TEXT NOT NULL DEFAULT '0'")
+            self._ensure_column(connection, "transactions", "tax_benefit", "TEXT NOT NULL DEFAULT '0'")
+            self._ensure_column(connection, "transactions", "deductible_expense", "TEXT NOT NULL DEFAULT '0'")
+            self._ensure_column(connection, "transactions", "foreign_transaction", "INTEGER NOT NULL DEFAULT 0")
 
     @contextmanager
     def _connect(self) -> Iterator[Any]:
@@ -424,8 +553,11 @@ class AuditLedger:
                 capped_bonus_points TEXT NOT NULL,
                 total_points TEXT NOT NULL,
                 points_value_rupees TEXT NOT NULL,
+                gst_rate TEXT NOT NULL DEFAULT '0',
                 gst_credit TEXT NOT NULL DEFAULT '0',
                 tax_benefit TEXT NOT NULL DEFAULT '0',
+                deductible_expense TEXT NOT NULL DEFAULT '0',
+                foreign_transaction INTEGER NOT NULL DEFAULT 0,
                 gst_claimable INTEGER NOT NULL DEFAULT 0,
                 gst_note TEXT NOT NULL DEFAULT '',
                 net_cost TEXT NOT NULL,
@@ -461,6 +593,12 @@ class AuditLedger:
                 bonus_points TEXT NOT NULL,
                 total_points TEXT NOT NULL,
                 points_value_rupees TEXT NOT NULL,
+                points_used TEXT NOT NULL DEFAULT '0',
+                gst_rate TEXT NOT NULL DEFAULT '0',
+                gst_credit TEXT NOT NULL DEFAULT '0',
+                tax_benefit TEXT NOT NULL DEFAULT '0',
+                deductible_expense TEXT NOT NULL DEFAULT '0',
+                foreign_transaction INTEGER NOT NULL DEFAULT 0,
                 net_cost TEXT NOT NULL,
                 paid_at TEXT NOT NULL,
                 details_json TEXT NOT NULL DEFAULT '{}',
@@ -480,6 +618,16 @@ class AuditLedger:
                 updated_at TEXT NOT NULL
             )
             """,
+            f"""
+            CREATE TABLE IF NOT EXISTS transaction_invoices (
+                transaction_id TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                file_data {"BYTEA" if self.database_url else "BLOB"} NOT NULL,
+                uploaded_at TEXT NOT NULL,
+                FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
+            )
+            """,
         ]
         for statement in statements:
             connection.execute(statement)
@@ -496,6 +644,8 @@ class AuditLedger:
             "origin_state": quote.origin_state,
             "destination_state": quote.destination_state,
             "hotel_state": quote.hotel_state,
+            "flight_class": quote.flight_class,
+            "flight_sector_count": quote.flight_sector_count,
         }
 
     def _ensure_column(
@@ -547,8 +697,11 @@ class AuditLedger:
             str(option.capped_bonus_points),
             str(option.total_points),
             str(option.points_value_rupees),
+            str(option.gst_rate),
             str(option.gst_credit),
             str(option.tax_benefit),
+            str(option.deductible_expense),
+            int(option.foreign_transaction),
             int(option.gst_claimable),
             option.gst_note,
             str(option.net_cost),
@@ -583,8 +736,11 @@ class AuditLedger:
             capped_bonus_points=Decimal(row["capped_bonus_points"]),
             total_points=Decimal(row["total_points"]),
             points_value_rupees=Decimal(row["points_value_rupees"]),
+            gst_rate=Decimal(row["gst_rate"]),
             gst_credit=Decimal(row["gst_credit"]),
             tax_benefit=Decimal(row["tax_benefit"]),
+            deductible_expense=Decimal(row["deductible_expense"]),
+            foreign_transaction=bool(row["foreign_transaction"]),
             gst_claimable=bool(row["gst_claimable"]),
             gst_note=row["gst_note"],
             net_cost=Decimal(row["net_cost"]),

@@ -66,6 +66,8 @@ class QuoteInput:
     origin_state: str | None = None
     destination_state: str | None = None
     hotel_state: str | None = None
+    flight_class: str | None = None
+    flight_sector_count: int = 1
 
 
 @dataclass(frozen=True)
@@ -88,8 +90,11 @@ class RecommendationOption:
     capped_bonus_points: Decimal
     total_points: Decimal
     points_value_rupees: Decimal
+    gst_rate: Decimal
     gst_credit: Decimal
     tax_benefit: Decimal
+    deductible_expense: Decimal
+    foreign_transaction: bool
     gst_claimable: bool
     gst_note: str
     net_cost: Decimal
@@ -152,6 +157,12 @@ class TransactionRecord:
     bonus_points: Decimal
     total_points: Decimal
     points_value_rupees: Decimal
+    points_used: Decimal
+    gst_rate: Decimal
+    gst_credit: Decimal
+    tax_benefit: Decimal
+    deductible_expense: Decimal
+    foreign_transaction: bool
     net_cost: Decimal
     paid_at: datetime
     details: dict[str, str] = field(default_factory=dict)

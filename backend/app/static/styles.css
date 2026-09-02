@@ -762,6 +762,182 @@ textarea:focus {
   font-size: 16px;
 }
 
+.points-redemption-box,
+.invoice-upload-panel {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid rgba(22, 58, 102, 0.16);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--soft-blue), #ffffff);
+}
+
+.points-redemption-box h3,
+.invoice-upload-copy strong {
+  color: var(--blue);
+  font-size: 16px;
+}
+
+.points-redemption-box p,
+.invoice-upload-copy span {
+  color: var(--muted);
+  margin: 0;
+}
+
+.points-redemption-box label {
+  max-width: 320px;
+}
+
+.invoice-upload-panel {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.invoice-upload-copy,
+.invoice-upload-actions,
+.invoice-upload-control,
+.transaction-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.invoice-upload-copy {
+  display: grid;
+}
+
+.invoice-file-input {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 9px 12px;
+  border: 1px dashed rgba(22, 58, 102, 0.35);
+  border-radius: 9px;
+  color: var(--blue);
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.invoice-file-input input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.invoice-file-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 7px;
+  color: #fff;
+  background: var(--blue);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.invoice-file-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.invoice-file-copy strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.invoice-file-copy small {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invoice-upload-control {
+  align-items: stretch;
+}
+
+.invoice-status {
+  color: var(--warn) !important;
+  font-weight: 700;
+}
+
+.invoice-status.is-uploaded {
+  color: var(--accent-strong) !important;
+}
+
+.gst-estimate-note {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.invoice-storage-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(180px, 1.2fr);
+  gap: 10px 22px;
+  align-items: center;
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid rgba(22, 58, 102, 0.16);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--soft-blue), #fff);
+}
+
+.invoice-storage-copy .eyebrow,
+.invoice-storage-copy h3,
+.invoice-storage-copy p,
+.storage-note {
+  margin: 0;
+}
+
+.invoice-storage-copy h3 {
+  margin: 3px 0;
+  color: var(--blue);
+  font-size: 18px;
+}
+
+.invoice-storage-copy p,
+.storage-note {
+  color: var(--muted);
+}
+
+.storage-meter {
+  height: 11px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(22, 58, 102, 0.12);
+}
+
+.storage-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+.storage-meter.is-warning span { background: var(--warn); }
+.storage-meter.is-critical span { background: #b42318; }
+.storage-note { grid-column: 1 / -1; }
+.storage-note.is-warning { color: #8a5a00; font-weight: 700; }
+.storage-note.is-critical { color: #b42318; font-weight: 700; }
+
+.transaction-actions {
+  justify-content: flex-end;
+}
+
 .success-panel {
   border-color: var(--accent);
 }
@@ -846,7 +1022,7 @@ textarea:focus {
 
 .transaction-row {
   display: grid;
-  grid-template-columns: 96px minmax(240px, 1fr) 140px 120px 92px;
+  grid-template-columns: 96px minmax(240px, 1fr) 120px 100px minmax(250px, 1.1fr);
   gap: 12px;
   align-items: center;
   padding: 14px;
@@ -1345,7 +1521,16 @@ select:disabled {
   }
 
   .top-actions,
-  .actions.split > div {
+  .actions.split > div,
+  .invoice-upload-panel {
     width: 100%;
+  }
+
+  .invoice-upload-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .invoice-storage-panel {
+    grid-template-columns: 1fr;
   }
 }
