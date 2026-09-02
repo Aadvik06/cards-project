@@ -55,6 +55,7 @@ def create_app():
             request.url.path == "/"
             or request.url.path == "/health"
             or request.url.path == "/auth/config"
+            or request.url.path == "/internal/keepalive"
             or request.url.path.startswith("/static/")
         )
 

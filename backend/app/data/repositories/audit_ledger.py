@@ -253,6 +253,11 @@ class AuditLedger:
             "remaining_bytes": max(allocation_bytes - used_bytes, 0),
         }
 
+    def keepalive(self) -> None:
+        """Run a minimal database query for the production maintenance job."""
+        with self._connect() as connection:
+            connection.execute("SELECT 1 FROM transactions LIMIT 1").fetchone()
+
     def save_invoice(
         self,
         *,

@@ -298,6 +298,9 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertTrue(self.ledger.delete_transaction(transaction.id))
         self.assertEqual(0, len(self.ledger.read_transactions()))
 
+    def test_database_keepalive_uses_a_lightweight_query(self) -> None:
+        self.ledger.keepalive()
+
     def test_invoice_is_stored_with_pending_status_until_uploaded(self) -> None:
         transaction = self.transactions.log_voucher_purchase(
             employee_name="Ava Patel",

@@ -1,3 +1,6 @@
+import os
+import secrets
+
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 
 from app.api.dependencies import (
@@ -25,6 +28,17 @@ router = APIRouter()
 MAX_INVOICE_SIZE_BYTES = 10 * 1024 * 1024
 INVOICE_ARCHIVE_ALLOCATION_BYTES = 400 * 1024 * 1024
 ALLOWED_INVOICE_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
+
+
+@router.get("/internal/keepalive", include_in_schema=False)
+def keepalive(request: Request) -> dict:
+    """Keep the Free-plan database active when invoked by Vercel Cron."""
+    cron_secret = os.environ.get("CRON_SECRET")
+    authorization = request.headers.get("authorization", "")
+    if not cron_secret or not secrets.compare_digest(authorization, f"Bearer {cron_secret}"):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    get_monthly_log_service().ledger.keepalive()
+    return {"ok": True}
 
 
 @router.post("/recommendations", response_model=RecommendationResponse)
