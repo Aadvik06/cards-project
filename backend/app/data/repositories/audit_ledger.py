@@ -18,6 +18,16 @@ from app.domain.models import (
 )
 
 
+POSTGRES_AUDIT_TABLES = (
+    "recommendations",
+    "recommendation_options",
+    "decisions",
+    "transactions",
+    "drafts",
+    "transaction_invoices",
+)
+
+
 class InvoiceStorageLimitError(ValueError):
     """Raised when an invoice would exceed the reserved archive allocation."""
 
@@ -413,6 +423,8 @@ class AuditLedger:
             self._ensure_column(connection, "transactions", "tax_benefit", "TEXT NOT NULL DEFAULT '0'")
             self._ensure_column(connection, "transactions", "deductible_expense", "TEXT NOT NULL DEFAULT '0'")
             self._ensure_column(connection, "transactions", "foreign_transaction", "INTEGER NOT NULL DEFAULT 0")
+            if self.database_url:
+                self._enable_postgres_row_level_security(connection)
 
     @contextmanager
     def _connect(self) -> Iterator[Any]:
@@ -453,6 +465,16 @@ class AuditLedger:
             return self.database_url
         separator = "&" if "?" in self.database_url else "?"
         return f"{self.database_url}{separator}sslmode=require"
+
+    def _enable_postgres_row_level_security(self, connection: Any) -> None:
+        """Deny direct PostgREST access to private audit tables.
+
+        The web application accesses these tables only through its server-side
+        PostgreSQL connection. RLS therefore has no client policies: Supabase's
+        anon/authenticated API roles cannot read or write corporate travel data.
+        """
+        for table_name in POSTGRES_AUDIT_TABLES:
+            connection.execute(f"ALTER TABLE public.{table_name} ENABLE ROW LEVEL SECURITY")
 
     def _upsert_recommendation_sql(self) -> str:
         if self.database_url:
