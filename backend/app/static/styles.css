@@ -1471,6 +1471,36 @@ select:disabled {
   gap: 10px;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.transaction-title-row .invoice-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  padding: 5px 9px;
+  border: 1px solid rgba(169, 100, 18, 0.22);
+  border-radius: 999px;
+  background: #fff8e9;
+  color: #9a5b13 !important;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.transaction-title-row .invoice-status::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
+.transaction-title-row .invoice-status.is-uploaded {
+  border-color: rgba(18, 110, 90, 0.2);
+  background: #edf8f3;
+  color: var(--accent-strong) !important;
 }
 
 .transaction-copy h4,
