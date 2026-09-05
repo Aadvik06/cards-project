@@ -2092,13 +2092,13 @@ function renderTransactions(transactions) {
     button.addEventListener("click", () => {
       const editor = document.querySelector(`#transaction-edit-${button.dataset.openEdit}`);
       if (!editor) return;
-      editor.open = true;
+      editor.classList.remove("is-hidden");
       editor.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
   });
   $$('[data-cancel-edit]').forEach((button) => {
     button.addEventListener("click", () => {
-      document.querySelector(`#transaction-edit-${button.dataset.cancelEdit}`)?.removeAttribute("open");
+      document.querySelector(`#transaction-edit-${button.dataset.cancelEdit}`)?.classList.add("is-hidden");
     });
   });
   $$('[data-edit-transaction]').forEach((form) => {
@@ -2202,8 +2202,7 @@ function transactionRow(item, transactionNumber) {
 function transactionEditMarkup(item) {
   const details = item.details || {};
   return `
-    <details class="transaction-edit-details" id="transaction-edit-${item.id}">
-      <summary>Edit booking details</summary>
+    <section class="transaction-edit-details is-hidden" id="transaction-edit-${item.id}">
       <form data-edit-transaction="${item.id}">
         <p>Only descriptive booking information can be changed. Amounts, points, taxes, and card details remain locked.</p>
         <div class="transaction-edit-grid">${transactionEditFields(item.travel_type, details)}</div>
@@ -2212,7 +2211,7 @@ function transactionEditMarkup(item) {
           <button class="secondary compact" data-cancel-edit="${item.id}" type="button">Cancel</button>
         </div>
       </form>
-    </details>
+    </section>
   `;
 }
 
