@@ -2178,7 +2178,7 @@ function transactionInvoicePanel(item) {
 
 function transactionSummary(item) {
   const details = item.details || {};
-  const vendor = vendorDisplayName(item.vendor_id, item.travel_type);
+  const vendor = vendorDisplayName(item.vendor_id, item.travel_type, details);
   if (item.travel_type === "flight") {
     return {
       title: [details.from, details.to].filter(Boolean).join(" → ") || "Flight booking",
@@ -2193,11 +2193,35 @@ function transactionSummary(item) {
       tags: [details.hotel_state].filter(Boolean),
     };
   }
-  return { title: vendor, metadata: `Voucher purchase · ${formatDate(item.paid_at)}`, tags: [] };
+  return {
+    title: voucherVendorName(details, item.vendor_id, vendor),
+    metadata: `American Express voucher purchase · ${formatDate(item.paid_at)}`,
+    tags: [],
+  };
 }
 
-function vendorDisplayName(vendorId, travelType) {
-  return vendorsByType[travelType]?.find((vendor) => vendor.id === vendorId)?.name || vendorId || "Booking platform";
+function vendorDisplayName(vendorId, travelType, details = {}) {
+  const configuredVendor = vendorsByType[travelType]?.find((vendor) => vendor.id === vendorId)?.name;
+  if (configuredVendor) return configuredVendor;
+  if (vendorId === "amex_other_voucher") return "Other American Express Voucher";
+  if (travelType === "voucher" && details.vendor_name) return details.vendor_name;
+  return humanizeVendorId(vendorId) || "Booking platform";
+}
+
+function voucherVendorName(details, vendorId, fallback) {
+  const enteredName = String(details.vendor_name || "").trim();
+  if (!enteredName || enteredName === vendorId || enteredName.toLowerCase() === "other voucher") return fallback;
+  return enteredName;
+}
+
+function humanizeVendorId(vendorId) {
+  if (!vendorId) return "";
+  const abbreviations = { amex: "American Express", hdfc: "HDFC", icici: "ICICI", mmt: "MakeMyTrip", goibibo: "Goibibo", easemytrip: "EaseMyTrip" };
+  return String(vendorId)
+    .split("_")
+    .filter(Boolean)
+    .map((part) => abbreviations[part.toLowerCase()] || `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }
 
 function transactionDetailsMarkup(item) {
@@ -2208,7 +2232,7 @@ function transactionDetailsMarkup(item) {
       rows.push(`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`);
     }
   };
-  add("Booking platform", vendorDisplayName(item.vendor_id, item.travel_type));
+  add("Booking platform", vendorDisplayName(item.vendor_id, item.travel_type, details));
   add("Booking date", formatDate(item.paid_at));
   if (item.travel_type === "flight") {
     add("Route", [details.from, details.to].filter(Boolean).join(" → "));
