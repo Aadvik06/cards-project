@@ -298,6 +298,26 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertTrue(self.ledger.delete_transaction(transaction.id))
         self.assertEqual(0, len(self.ledger.read_transactions()))
 
+    def test_transaction_details_can_be_directly_updated_without_changing_calculations(self) -> None:
+        transaction = self.transactions.log_voucher_purchase(
+            employee_name="Ava Patel",
+            vendor_name="Office Supply Voucher",
+            final_amount_paid=Decimal("1000"),
+            paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            description="Original note.",
+        )
+
+        self.assertTrue(self.ledger.update_transaction_details(
+            transaction.id,
+            {"vendor_name": "Client Gift Voucher", "description": "Corrected note."},
+        ))
+
+        updated = self.ledger.read_transactions()[0]
+        self.assertEqual("Client Gift Voucher", updated["details"]["vendor_name"])
+        self.assertEqual("Corrected note.", updated["details"]["description"])
+        self.assertEqual(Decimal("1000.00"), Decimal(updated["final_amount_paid"]))
+        self.assertEqual(Decimal("300.0000"), Decimal(updated["total_points"]))
+
     def test_database_keepalive_uses_a_lightweight_query(self) -> None:
         self.ledger.keepalive()
 

@@ -19,6 +19,7 @@ from app.schemas.recommendation import (
     FinalizeTransactionRequest,
     RecommendationCreateRequest,
     RecommendationResponse,
+    TransactionDetailsUpdateRequest,
     TransactionResponse,
     VoucherLogRequest,
 )
@@ -28,6 +29,15 @@ router = APIRouter()
 MAX_INVOICE_SIZE_BYTES = 10 * 1024 * 1024
 INVOICE_ARCHIVE_ALLOCATION_BYTES = 400 * 1024 * 1024
 ALLOWED_INVOICE_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
+EDITABLE_TRANSACTION_DETAIL_FIELDS = {
+    "flight": {
+        "from", "to", "airline", "flight_date", "return_flight_date", "trip_type",
+        "outbound_departure_time", "outbound_arrival_time", "return_departure_time",
+        "return_arrival_time", "description",
+    },
+    "hotel": {"hotel_name", "city", "hotel_state", "check_in", "check_out", "description"},
+    "voucher": {"vendor_name", "purchase_date", "description"},
+}
 
 
 @router.get("/internal/keepalive", include_in_schema=False)
@@ -126,6 +136,22 @@ def delete_transaction(transaction_id: str) -> dict:
     if not deleted:
         raise HTTPException(status_code=404, detail="Transaction not found.")
     return {"deleted": True, "transaction_id": transaction_id}
+
+
+@router.put("/transactions/{transaction_id}/details")
+def update_transaction_details(
+    transaction_id: str, payload: TransactionDetailsUpdateRequest
+) -> dict:
+    ledger = get_monthly_log_service().ledger
+    transaction = next((item for item in ledger.read_transactions() if item["id"] == transaction_id), None)
+    if transaction is None:
+        raise HTTPException(status_code=404, detail="Transaction not found.")
+    allowed_fields = EDITABLE_TRANSACTION_DETAIL_FIELDS.get(transaction["travel_type"], set())
+    unknown_fields = set(payload.details) - allowed_fields
+    if unknown_fields:
+        raise HTTPException(status_code=400, detail="Only booking details can be edited. Amounts and calculations are locked.")
+    ledger.update_transaction_details(transaction_id, payload.details)
+    return {"updated": True, "transaction_id": transaction_id}
 
 
 @router.post("/transactions/{transaction_id}/invoice")

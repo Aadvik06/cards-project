@@ -349,6 +349,22 @@ class AuditLedger:
             )
             return cursor.rowcount > 0
 
+    def update_transaction_details(self, transaction_id: str, updates: dict[str, str]) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                self._sql("SELECT details_json FROM transactions WHERE id = ?"),
+                (transaction_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            details = json.loads(row["details_json"] or "{}")
+            details.update(updates)
+            cursor = connection.execute(
+                self._sql("UPDATE transactions SET details_json = ? WHERE id = ?"),
+                (json.dumps(details), transaction_id),
+            )
+            return cursor.rowcount > 0
+
     def save_draft(
         self,
         *,

@@ -1686,6 +1686,78 @@ select:disabled {
   padding: 2px 4px;
 }
 
+.transaction-edit-action {
+  justify-self: stretch;
+}
+
+.transaction-edit-details {
+  grid-column: 1 / -1;
+  padding: 0 14px 14px;
+  border: 1px solid rgba(22, 58, 102, 0.14);
+  border-radius: 10px;
+  background: #f8fbfa;
+}
+
+.transaction-edit-details summary {
+  padding: 12px 0;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.transaction-edit-details form {
+  display: grid;
+  gap: 12px;
+}
+
+.transaction-edit-details p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.transaction-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.transaction-edit-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.transaction-edit-grid input,
+.transaction-edit-grid textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 9px;
+  border: 1px solid rgba(22, 58, 102, 0.18);
+  border-radius: 7px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+}
+
+.transaction-edit-grid textarea {
+  resize: vertical;
+}
+
+.transaction-edit-note {
+  grid-column: span 2;
+}
+
+.transaction-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .transaction-row .invoice-upload-control {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1835,7 +1907,17 @@ select:disabled {
   }
 
   .transaction-row .transaction-overview,
-  .transaction-detail-grid {
+  .transaction-detail-grid,
+  .transaction-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .transaction-edit-note {
+    grid-column: auto;
+  }
+
+  .transaction-edit-actions {
+    display: grid;
     grid-template-columns: 1fr;
   }
 

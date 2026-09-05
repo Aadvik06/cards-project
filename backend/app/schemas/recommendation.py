@@ -165,6 +165,10 @@ class VoucherLogRequest(BaseModel):
     description: str
 
 
+class TransactionDetailsUpdateRequest(BaseModel):
+    details: dict[str, str] = Field(default_factory=dict)
+
+
 class TransactionResponse(BaseModel):
     id: str
     recommendation_id: str

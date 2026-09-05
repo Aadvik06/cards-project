@@ -1052,6 +1052,17 @@ async function postJson(url, body) {
   return data;
 }
 
+async function putJson(url, body) {
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: await authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(body),
+  });
+  const data = await readResponseBody(response);
+  if (!response.ok) throw new Error(data.detail || "Something went wrong.");
+  return data;
+}
+
 async function deleteJson(url) {
   const response = await fetch(url, {
     method: "DELETE",
@@ -2077,6 +2088,37 @@ function renderTransactions(transactions) {
       }
     });
   });
+  $$('[data-open-edit]').forEach((button) => {
+    button.addEventListener("click", () => {
+      const editor = document.querySelector(`#transaction-edit-${button.dataset.openEdit}`);
+      if (!editor) return;
+      editor.open = true;
+      editor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  });
+  $$('[data-cancel-edit]').forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelector(`#transaction-edit-${button.dataset.cancelEdit}`)?.removeAttribute("open");
+    });
+  });
+  $$('[data-edit-transaction]').forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const details = {};
+      form.querySelectorAll("[data-edit-field]").forEach((input) => {
+        details[input.dataset.editField] = input.value.trim();
+      });
+      try {
+        setStatus("Saving details");
+        await putJson(`/transactions/${form.dataset.editTransaction}/details`, { details });
+        await loadTransactions();
+        showToast("Booking details updated.");
+      } catch (error) {
+        setStatus("Ready");
+        showToast(error.message, true);
+      }
+    });
+  });
   setupInvoiceActions();
 }
 
@@ -2145,14 +2187,61 @@ function transactionRow(item, transactionNumber) {
     <div class="transaction-stat"><span>Points</span><strong>${formatNumber(item.total_points)}</strong></div>
     <div class="transaction-actions">
       ${transactionInvoicePanel(item)}
+      <button class="secondary compact transaction-edit-action" data-open-edit="${item.id}" type="button">Edit details</button>
       <button class="transaction-delete-action" data-delete-transaction="${item.id}" type="button">Delete transaction</button>
     </div>
     <details class="transaction-details">
       <summary><span>View booking details</span><span class="details-chevron" aria-hidden="true">⌄</span></summary>
       <div class="transaction-detail-grid">${transactionDetailsMarkup(item)}</div>
     </details>
+    ${transactionEditMarkup(item)}
   `;
   return row;
+}
+
+function transactionEditMarkup(item) {
+  const details = item.details || {};
+  return `
+    <details class="transaction-edit-details" id="transaction-edit-${item.id}">
+      <summary>Edit booking details</summary>
+      <form data-edit-transaction="${item.id}">
+        <p>Only descriptive booking information can be changed. Amounts, points, taxes, and card details remain locked.</p>
+        <div class="transaction-edit-grid">${transactionEditFields(item.travel_type, details)}</div>
+        <div class="transaction-edit-actions">
+          <button class="primary compact" type="submit">Save details</button>
+          <button class="secondary compact" data-cancel-edit="${item.id}" type="button">Cancel</button>
+        </div>
+      </form>
+    </details>
+  `;
+}
+
+function transactionEditFields(travelType, details) {
+  const field = (label, key, type = "text") => `
+    <label>${escapeHtml(label)}
+      <input data-edit-field="${key}" type="${type}" value="${escapeHtml(details[key] || "")}" />
+    </label>
+  `;
+  const note = () => `
+    <label class="transaction-edit-note">Notes
+      <textarea data-edit-field="description" rows="2">${escapeHtml(details.description || "")}</textarea>
+    </label>
+  `;
+  if (travelType === "flight") {
+    return [
+      field("From", "from"), field("To", "to"), field("Airline", "airline"),
+      field("Outbound date", "flight_date", "date"), field("Return date", "return_flight_date", "date"), field("Trip type", "trip_type"),
+      field("Outbound departure", "outbound_departure_time", "time"), field("Outbound arrival", "outbound_arrival_time", "time"),
+      field("Inbound departure", "return_departure_time", "time"), field("Inbound arrival", "return_arrival_time", "time"), note(),
+    ].join("");
+  }
+  if (travelType === "hotel") {
+    return [
+      field("Hotel", "hotel_name"), field("City", "city"), field("State / location", "hotel_state"),
+      field("Check-in", "check_in", "date"), field("Check-out", "check_out", "date"), note(),
+    ].join("");
+  }
+  return [field("Voucher vendor", "vendor_name"), field("Purchase date", "purchase_date", "date"), note()].join("");
 }
 
 function transactionInvoicePanel(item) {
