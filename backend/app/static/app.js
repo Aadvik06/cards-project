@@ -815,8 +815,8 @@ function renderVendorRows() {
           GST invoice can be created
         </label>
         <label class="wide-detail booking-link-field">
-          Booking / listing link <span>Optional · included at the bottom of the PDF</span>
-          <input type="url" data-vendor-link="${vendor.id}" placeholder="https://..." />
+          Listing link
+          <input type="url" data-vendor-link="${vendor.id}" />
         </label>
         ${vendorDetailFields(vendor)}
       </div>
