@@ -538,6 +538,126 @@ textarea:focus {
   opacity: 0.72;
 }
 
+/* Vendor cards: quote information first, then platform-specific booking details. */
+.vendor-row:not(.simple) {
+  grid-template-columns: 1fr;
+  gap: 14px;
+  padding: 18px;
+}
+
+.vendor-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid rgba(22, 58, 102, 0.1);
+}
+
+.vendor-row:not(.simple) .vendor-title {
+  padding-right: 0;
+}
+
+.vendor-title > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vendor-mode {
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--blue);
+  background: var(--soft-blue);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.vendor-mode.is-voucher {
+  color: #825511;
+  background: #fff3db;
+}
+
+.remove-vendor {
+  position: static;
+  flex: 0 0 auto;
+}
+
+.vendor-quote-section,
+.vendor-booking-section {
+  display: grid;
+  gap: 11px;
+  padding: 14px;
+  border: 1px solid rgba(22, 58, 102, 0.1);
+  border-radius: 10px;
+  background: rgba(248, 251, 250, 0.78);
+}
+
+.vendor-booking-section {
+  background: #ffffff;
+}
+
+.vendor-section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vendor-section-heading strong {
+  color: var(--accent-strong);
+  font-size: 14px;
+}
+
+.vendor-section-heading span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.vendor-quote-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.vendor-quote-grid.is-voucher {
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+}
+
+.vendor-quote-grid .booking-link-field {
+  grid-column: span 2;
+}
+
+.vendor-quote-grid .checkbox-label {
+  min-height: 40px;
+  align-self: end;
+  padding: 9px 10px;
+  border: 1px solid rgba(22, 58, 102, 0.12);
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.vendor-detail-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.flight-detail-fields > label,
+.vendor-detail-fields .field-section {
+  grid-column: 1 / -1;
+}
+
+.hotel-detail-fields {
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+}
+
+.vendor-detail-fields .field-section {
+  margin: 0;
+}
+
 .field-section-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(130px, 1fr));
@@ -1913,8 +2033,16 @@ select:disabled {
   .vendor-fields,
   .flight-fields,
   .hotel-fields,
+  .vendor-quote-grid,
+  .vendor-quote-grid.is-voucher,
+  .vendor-detail-fields,
+  .hotel-detail-fields,
   .field-section-grid {
     grid-template-columns: 1fr;
+  }
+
+  .vendor-quote-grid .booking-link-field {
+    grid-column: auto;
   }
 
   .wide-detail {

@@ -779,47 +779,56 @@ function renderVendorRows() {
     const row = document.createElement("div");
     const isVoucherVendor = isAmexTravelVoucherVendor(vendor.id);
     const priceLabel = state.travelType === "flight" ? "Flight price" : "Hotel price";
+    const vendorMode = isVoucherVendor ? "Gift voucher" : vendor.id.includes("smartbuy") || vendor.id.includes("ishop") ? "Direct portal" : "Direct booking";
     row.className = `vendor-row ${state.travelType === "flight" ? "flight-vendor-row" : ""} ${state.travelType === "hotel" ? "hotel-vendor-row" : ""}`;
     row.innerHTML = `
-      <button class="remove-vendor" data-remove-vendor="${vendor.id}" type="button" aria-label="Remove ${escapeHtml(vendor.name)}" title="Remove this vendor">×</button>
-      <div class="vendor-title">
-        <strong>${vendor.name}</strong>
-        <span>${vendor.card}</span>
+      <div class="vendor-card-header">
+        <div class="vendor-title">
+          <div><strong>${vendor.name}</strong><span class="vendor-mode ${isVoucherVendor ? "is-voucher" : ""}">${vendorMode}</span></div>
+          <span>${vendor.card}</span>
+        </div>
+        <button class="remove-vendor" data-remove-vendor="${vendor.id}" type="button" aria-label="Remove ${escapeHtml(vendor.name)}" title="Remove this vendor">×</button>
       </div>
-      <div class="vendor-fields ${state.travelType === "flight" ? "flight-fields" : ""} ${state.travelType === "hotel" ? "hotel-fields" : ""}">
-        <label>
-          ${isVoucherVendor ? priceLabel : "Price"}
-          <input inputmode="decimal" min="0" step="0.01" type="number" data-vendor-amount="${vendor.id}" placeholder="0" />
-        </label>
-        ${isVoucherVendor ? `
+      <section class="vendor-quote-section">
+        <div class="vendor-section-heading"><strong>Quote</strong><span>${isVoucherVendor ? "Voucher and booking values" : "Booking value and invoice"}</span></div>
+        <div class="vendor-quote-grid ${isVoucherVendor ? "is-voucher" : ""}">
           <label>
-            Voucher value
-            <input inputmode="decimal" min="0" step="0.01" type="number" data-vendor-voucher="${vendor.id}" placeholder="0" />
+            ${isVoucherVendor ? priceLabel : "Price"}
+            <input inputmode="decimal" min="0" step="0.01" type="number" data-vendor-amount="${vendor.id}" placeholder="0" />
           </label>
-        ` : ""}
-        <label>
-          ${isVoucherVendor ? "Voucher discount %" : "Discount %"}
-          <input
-            inputmode="decimal"
-            min="0"
-            max="100"
-            step="0.01"
-            type="number"
-            data-vendor-discount="${vendor.id}"
-            placeholder="0"
-            ${noDiscountVendors.has(vendor.id) ? "value=\"0\" disabled" : ""}
-          />
-        </label>
-        <label class="checkbox-label">
-          <input type="checkbox" data-vendor-gst="${vendor.id}" />
-          GST invoice can be created
-        </label>
-        <label class="wide-detail booking-link-field">
-          Listing link
-          <input type="url" data-vendor-link="${vendor.id}" />
-        </label>
-        ${vendorDetailFields(vendor)}
-      </div>
+          ${isVoucherVendor ? `
+            <label>
+              Voucher value
+              <input inputmode="decimal" min="0" step="0.01" type="number" data-vendor-voucher="${vendor.id}" placeholder="0" />
+            </label>
+          ` : ""}
+          <label>
+            ${isVoucherVendor ? "Voucher discount %" : "Discount %"}
+            <input
+              inputmode="decimal"
+              min="0"
+              max="100"
+              step="0.01"
+              type="number"
+              data-vendor-discount="${vendor.id}"
+              placeholder="0"
+              ${noDiscountVendors.has(vendor.id) ? "value=\"0\" disabled" : ""}
+            />
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" data-vendor-gst="${vendor.id}" />
+            GST invoice can be created
+          </label>
+          <label class="booking-link-field">
+            Listing link
+            <input type="url" data-vendor-link="${vendor.id}" />
+          </label>
+        </div>
+      </section>
+      <section class="vendor-booking-section">
+        <div class="vendor-section-heading"><strong>${state.travelType === "flight" ? "Flight details" : "Hotel details"}</strong><span>Specific to this ${state.travelType === "flight" ? "itinerary" : "stay"}</span></div>
+        <div class="vendor-detail-fields ${state.travelType === "flight" ? "flight-detail-fields" : "hotel-detail-fields"}">${vendorDetailFields(vendor)}</div>
+      </section>
     `;
     vendorList.appendChild(row);
   });
