@@ -450,6 +450,7 @@ textarea:focus {
 }
 
 .vendor-row {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(190px, 0.58fr) minmax(0, 2.42fr);
   gap: 18px;
@@ -458,6 +459,45 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfb;
+}
+
+.remove-vendor {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(181, 48, 48, 0.22);
+  border-radius: 50%;
+  color: #b53030;
+  background: #fff7f7;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.remove-vendor:hover {
+  border-color: #b53030;
+  background: #fff0f0;
+}
+
+.vendor-row:not(.simple) .vendor-title {
+  padding-right: 34px;
+}
+
+.booking-link-field {
+  grid-column: 1 / -1;
+}
+
+.booking-link-field > span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
 }
 
 .flight-vendor-row {
@@ -1124,6 +1164,29 @@ textarea:focus {
   background: var(--ink);
   color: #fff;
   box-shadow: var(--shadow);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toast-action {
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 5px;
+  color: #fff;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.toast-action:hover {
+  color: var(--ink);
+  background: #fff;
 }
 
 .toast.error {

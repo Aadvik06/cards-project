@@ -25,7 +25,10 @@ const state = {
   pendingDeclineOption: null,
   currentDraftId: null,
   highestStep: 1,
+  removedVendorIds: new Set(),
 };
+
+let toastTimer;
 
 const noDiscountVendors = new Set([
   "hdfc_smartbuy_flight",
@@ -350,12 +353,27 @@ function setStatus(text) {
   $("#saveStatus").textContent = text;
 }
 
-function showToast(message, isError = false) {
+function showToast(message, isError = false, action = null) {
   const toast = $("#toast");
-  toast.textContent = message;
+  toast.replaceChildren();
+  const text = document.createElement("span");
+  text.textContent = message;
+  toast.appendChild(text);
+  if (action) {
+    const button = document.createElement("button");
+    button.className = "toast-action";
+    button.type = "button";
+    button.textContent = action.label;
+    button.addEventListener("click", () => {
+      action.onClick();
+      toast.classList.add("is-hidden");
+    });
+    toast.appendChild(button);
+  }
   toast.classList.toggle("error", isError);
   toast.classList.remove("is-hidden");
-  window.setTimeout(() => toast.classList.add("is-hidden"), 3600);
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => toast.classList.add("is-hidden"), 5000);
 }
 
 function setAuthMessage(message, isError = false) {
@@ -651,6 +669,7 @@ function setupTripChoices() {
       state.pendingDeclineOption = null;
       state.currentDraftId = null;
       state.highestStep = 1;
+      state.removedVendorIds = new Set();
       $("#travelDate").value = today();
       $("#priceTitle").textContent = titleForType();
       updateFlightOnlyFields();
@@ -762,6 +781,7 @@ function renderVendorRows() {
     const priceLabel = state.travelType === "flight" ? "Flight price" : "Hotel price";
     row.className = `vendor-row ${state.travelType === "flight" ? "flight-vendor-row" : ""} ${state.travelType === "hotel" ? "hotel-vendor-row" : ""}`;
     row.innerHTML = `
+      <button class="remove-vendor" data-remove-vendor="${vendor.id}" type="button" aria-label="Remove ${escapeHtml(vendor.name)}" title="Remove this vendor">×</button>
       <div class="vendor-title">
         <strong>${vendor.name}</strong>
         <span>${vendor.card}</span>
@@ -794,10 +814,31 @@ function renderVendorRows() {
           <input type="checkbox" data-vendor-gst="${vendor.id}" />
           GST invoice can be created
         </label>
+        <label class="wide-detail booking-link-field">
+          Booking / listing link <span>Optional · included at the bottom of the PDF</span>
+          <input type="url" data-vendor-link="${vendor.id}" placeholder="https://..." />
+        </label>
         ${vendorDetailFields(vendor)}
       </div>
     `;
     vendorList.appendChild(row);
+  });
+  $$('[data-remove-vendor]').forEach((button) => {
+    button.addEventListener("click", () => {
+      const vendorId = button.dataset.removeVendor;
+      const row = button.closest(".vendor-row");
+      if (!vendorId || !row) return;
+      state.removedVendorIds.add(vendorId);
+      row.classList.add("is-hidden");
+      const vendor = vendorsByType[state.travelType].find((item) => item.id === vendorId);
+      showToast(`${vendor?.name || "Vendor"} removed.`, false, {
+        label: "Undo",
+        onClick: () => {
+          state.removedVendorIds.delete(vendorId);
+          row.classList.remove("is-hidden");
+        },
+      });
+    });
   });
   setupSplitPickers();
   setupLayoverControls();
@@ -915,11 +956,12 @@ function vendorDetailFields(vendor) {
 function collectQuotes() {
   const quotes = [];
   vendorsByType[state.travelType].forEach((vendor) => {
+    if (state.removedVendorIds.has(vendor.id)) return;
     const amountInput = document.querySelector(`[data-vendor-amount="${vendor.id}"]`);
     const discountInput = document.querySelector(`[data-vendor-discount="${vendor.id}"]`);
     const voucherInput = document.querySelector(`[data-vendor-voucher="${vendor.id}"]`);
     const gstInput = document.querySelector(`[data-vendor-gst="${vendor.id}"]`);
-    const amount = Number(amountInput.value);
+    const amount = Number(amountInput?.value || 0);
     const discountPercent = noDiscountVendors.has(vendor.id) ? 0 : Number(discountInput?.value || 0);
     const voucherFaceValue = Number(voucherInput?.value || 0);
 
@@ -1366,6 +1408,13 @@ function setupChoicePdf() {
       </th>
     `;
     }).join("");
+    const bookingLinks = bookingLinksForPdf(options);
+    const bookingLinksMarkup = bookingLinks.length ? `
+      <section class="booking-links">
+        <div class="section-title">Booking Links</div>
+        <ul>${bookingLinks.map((link) => `<li><strong>${escapeHtml(link.vendor)}</strong><a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer">Open booking link</a></li>`).join("")}</ul>
+      </section>
+    ` : "";
 
     printWindow.document.write(`
       <!doctype html>
@@ -1487,6 +1536,10 @@ function setupChoicePdf() {
               color: #0a4d3f;
               font-weight: 700;
             }
+            .booking-links { margin-top: 10px; }
+            .booking-links ul { list-style: none; margin: 0; padding: 0; }
+            .booking-links li { border-bottom: 1px solid #e5ebe5; display: flex; gap: 10px; justify-content: space-between; padding: 5px 2px; }
+            .booking-links a { color: #0a4d3f; font-weight: 700; text-decoration: underline; }
           </style>
         </head>
         <body>
@@ -1511,6 +1564,7 @@ function setupChoicePdf() {
               <tbody>${comparisonRows}</tbody>
             </table>
           </section>
+          ${bookingLinksMarkup}
           <script>
             window.onload = () => {
               const images = Array.from(document.images);
@@ -1525,6 +1579,28 @@ function setupChoicePdf() {
     `);
     printWindow.document.close();
   });
+}
+
+function bookingLinksForPdf(options) {
+  const byVendor = new Map();
+  options.forEach((option) => {
+    if (byVendor.has(option.vendor_id)) return;
+    const input = document.querySelector(`[data-vendor-link="${option.vendor_id}"]`);
+    const url = safeBookingUrl(input?.value);
+    if (url) byVendor.set(option.vendor_id, { vendor: option.vendor_name, url });
+  });
+  return [...byVendor.values()];
+}
+
+function safeBookingUrl(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+  try {
+    const url = new URL(trimmed);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch {
+    return "";
+  }
 }
 
 async function acceptOption(option) {
@@ -1779,7 +1855,8 @@ function collectFormValues() {
       (field.dataset.vendorAmount ? `amount:${field.dataset.vendorAmount}` : "") ||
       (field.dataset.vendorDiscount ? `discount:${field.dataset.vendorDiscount}` : "") ||
       (field.dataset.vendorVoucher ? `voucher:${field.dataset.vendorVoucher}` : "") ||
-      (field.dataset.vendorGst ? `gst:${field.dataset.vendorGst}` : "");
+      (field.dataset.vendorGst ? `gst:${field.dataset.vendorGst}` : "") ||
+      (field.dataset.vendorLink ? `link:${field.dataset.vendorLink}` : "");
     if (key) values[key] = field.type === "checkbox" ? field.checked : field.value;
   });
   return values;
@@ -1792,7 +1869,8 @@ function fillFormValues(values) {
       (key.startsWith("amount:") ? document.querySelector(`[data-vendor-amount="${key.slice(7)}"]`) : null) ||
       (key.startsWith("discount:") ? document.querySelector(`[data-vendor-discount="${key.slice(9)}"]`) : null) ||
       (key.startsWith("voucher:") ? document.querySelector(`[data-vendor-voucher="${key.slice(8)}"]`) : null) ||
-      (key.startsWith("gst:") ? document.querySelector(`[data-vendor-gst="${key.slice(4)}"]`) : null);
+      (key.startsWith("gst:") ? document.querySelector(`[data-vendor-gst="${key.slice(4)}"]`) : null) ||
+      (key.startsWith("link:") ? document.querySelector(`[data-vendor-link="${key.slice(5)}"]`) : null);
     if (field) {
       if (field.type === "checkbox") field.checked = Boolean(value);
       else field.value = value;
@@ -1807,6 +1885,7 @@ function cancelFlow() {
   state.pendingDeclineOption = null;
   state.currentDraftId = null;
   state.highestStep = 1;
+  state.removedVendorIds = new Set();
   $("#quoteForm").reset();
   $("#finalForm").reset();
   $("#tripDetails").innerHTML = "";
