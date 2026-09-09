@@ -68,6 +68,8 @@ class QuoteInput:
     hotel_state: str | None = None
     flight_class: str | None = None
     flight_sector_count: int = 1
+    agent_payment_method: str | None = None
+    agent_card_id: str | None = None
 
 
 @dataclass(frozen=True)

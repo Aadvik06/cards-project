@@ -154,7 +154,7 @@ class ReportService:
         for index, row in enumerate(sorted(rows, key=lambda item: item["paid_at"]), start=1):
             details = row.get("details") or {}
             vendor_details = [
-                self._vendor_name(details.get("vendor_name") or row["vendor_id"]),
+                details.get("travel_agent_name") or self._vendor_name(details.get("vendor_name") or row["vendor_id"]),
                 self._route_or_stay(row),
                 details.get("airline") or details.get("hotel_name") or "",
                 self._class_or_time(row),

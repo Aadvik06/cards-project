@@ -27,6 +27,8 @@ class QuoteRequest(BaseModel):
     hotel_state: str | None = None
     flight_class: str | None = None
     flight_sector_count: int = Field(default=1, ge=1, le=4)
+    agent_payment_method: str | None = None
+    agent_card_id: str | None = None
 
     def to_domain(self) -> QuoteInput:
         return QuoteInput(
@@ -42,6 +44,8 @@ class QuoteRequest(BaseModel):
             hotel_state=self.hotel_state,
             flight_class=self.flight_class,
             flight_sector_count=self.flight_sector_count,
+            agent_payment_method=self.agent_payment_method,
+            agent_card_id=self.agent_card_id,
         )
 
 

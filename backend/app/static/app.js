@@ -4,7 +4,7 @@ const vendorsByType = {
     { id: "amex_cleartrip_generic_voucher", name: "Cleartrip E-Gift Voucher", card: "American Express" },
     { id: "hdfc_smartbuy_flight", name: "HDFC SmartBuy", card: "HDFC Infinia" },
     { id: "icici_ishop_flight", name: "ICICI iShop", card: "ICICI Times Black" },
-    { id: "travel_agent_flight", name: "Travel Agent", card: "Bank transfer", isAgent: true },
+    { id: "travel_agent_flight", name: "Travel Agent", card: "Card or bank transfer", isAgent: true },
   ],
   hotel: [
     { id: "amex_goibibo_hotel_voucher", name: "Goibibo Hotel E-Gift Voucher", card: "American Express" },
@@ -14,7 +14,7 @@ const vendorsByType = {
     { id: "hdfc_smartbuy_hotel", name: "HDFC SmartBuy", card: "HDFC Infinia" },
     { id: "icici_ishop_hotel", name: "ICICI iShop", card: "ICICI Times Black" },
     { id: "amex_fine_hotels", name: "American Express Fine Hotels", card: "American Express" },
-    { id: "travel_agent_hotel", name: "Travel Agent", card: "Bank transfer", isAgent: true },
+    { id: "travel_agent_hotel", name: "Travel Agent", card: "Card or bank transfer", isAgent: true },
   ],
 };
 
@@ -782,19 +782,19 @@ function renderVendorRows() {
     const row = document.createElement("div");
     const isVoucherVendor = isAmexTravelVoucherVendor(vendor.id);
     const priceLabel = state.travelType === "flight" ? "Flight price" : "Hotel price";
-    const vendorMode = isVoucherVendor ? "Gift voucher" : vendor.id.includes("smartbuy") || vendor.id.includes("ishop") ? "Direct portal" : "Direct booking";
+    const vendorMode = vendor.isAgent ? "Travel agent" : isVoucherVendor ? "Gift voucher" : vendor.id.includes("smartbuy") || vendor.id.includes("ishop") ? "Direct portal" : "Direct booking";
     row.className = `vendor-row ${state.travelType === "flight" ? "flight-vendor-row" : ""} ${state.travelType === "hotel" ? "hotel-vendor-row" : ""}`;
     row.innerHTML = `
       <div class="vendor-card-header">
         <div class="vendor-title">
-          <div><strong>${vendor.name}</strong><span class="vendor-mode ${isVoucherVendor ? "is-voucher" : ""}">${vendorMode}</span></div>
+          <div><strong>${vendor.name}</strong><span class="vendor-mode ${isVoucherVendor ? "is-voucher" : vendor.isAgent ? "is-agent" : ""}">${vendorMode}</span></div>
           <span>${vendor.card}</span>
         </div>
         <button class="remove-vendor" data-remove-vendor="${vendor.id}" type="button" aria-label="Remove ${escapeHtml(vendor.name)}" title="Remove this vendor">×</button>
       </div>
       <section class="vendor-quote-section">
         <div class="vendor-section-heading"><strong>Quote</strong><span>${isVoucherVendor ? "Voucher and booking values" : "Booking value and invoice"}</span></div>
-        <div class="vendor-quote-grid ${isVoucherVendor ? "is-voucher" : ""}">
+        <div class="vendor-quote-grid ${isVoucherVendor ? "is-voucher" : ""} ${vendor.isAgent ? "is-agent" : ""}">
           <label>
             ${isVoucherVendor ? priceLabel : "Price"}
             <input inputmode="decimal" min="0" step="0.01" type="number" data-vendor-amount="${vendor.id}" placeholder="0" />
@@ -804,6 +804,28 @@ function renderVendorRows() {
               Voucher value
               <input inputmode="decimal" min="0" step="0.01" type="number" data-vendor-voucher="${vendor.id}" placeholder="0" />
             </label>
+          ` : ""}
+          ${vendor.isAgent ? `
+            <label>
+              Travel agent name
+              <input data-agent-name="${vendor.id}" placeholder="e.g. Acme Travel" />
+            </label>
+            <label>
+              Payment method
+              <select data-agent-payment="${vendor.id}">
+                <option value="bank_transfer">Bank transfer</option>
+                <option value="card">Card</option>
+              </select>
+            </label>
+            <label class="agent-card-field is-hidden" data-agent-card-field="${vendor.id}">
+              Credit card
+              <select data-agent-card="${vendor.id}">
+                <option value="amex">American Express</option>
+                <option value="hdfc_infinia">HDFC Infinia</option>
+                <option value="icici_times_black">ICICI Times Black</option>
+              </select>
+            </label>
+            <p class="agent-points-note">Card payments earn normal points only. No bonus points apply.</p>
           ` : ""}
           <label>
             ${isVoucherVendor ? "Voucher discount %" : "Discount %"}
@@ -855,6 +877,18 @@ function renderVendorRows() {
   setupSplitPickers();
   setupLayoverControls();
   setupTripTypeControls();
+  setupTravelAgentPaymentControls();
+}
+
+function setupTravelAgentPaymentControls() {
+  $$('[data-agent-payment]').forEach((select) => {
+    const updateCardField = () => {
+      const cardField = document.querySelector(`[data-agent-card-field="${select.dataset.agentPayment}"]`);
+      cardField?.classList.toggle("is-hidden", select.value !== "card");
+    };
+    select.addEventListener("change", updateCardField);
+    updateCardField();
+  });
 }
 
 function vendorDetailFields(vendor) {
@@ -973,6 +1007,9 @@ function collectQuotes() {
     const discountInput = document.querySelector(`[data-vendor-discount="${vendor.id}"]`);
     const voucherInput = document.querySelector(`[data-vendor-voucher="${vendor.id}"]`);
     const gstInput = document.querySelector(`[data-vendor-gst="${vendor.id}"]`);
+    const agentNameInput = document.querySelector(`[data-agent-name="${vendor.id}"]`);
+    const agentPaymentInput = document.querySelector(`[data-agent-payment="${vendor.id}"]`);
+    const agentCardInput = document.querySelector(`[data-agent-card="${vendor.id}"]`);
     const amount = Number(amountInput?.value || 0);
     const discountPercent = noDiscountVendors.has(vendor.id) ? 0 : Number(discountInput?.value || 0);
     const voucherFaceValue = Number(voucherInput?.value || 0);
@@ -996,9 +1033,16 @@ function collectQuotes() {
       if (isAmexTravelVoucherVendor(vendor.id) && voucherFaceValue > amount) {
         throw new Error("Voucher value cannot be higher than the booking price.");
       }
+      if (vendor.isAgent && !agentNameInput?.value.trim()) {
+        throw new Error("Enter the travel agent name before calculating recommendations.");
+      }
+      if (vendor.isAgent && agentPaymentInput?.value === "card" && !agentCardInput?.value) {
+        throw new Error("Choose a card for the Travel Agent payment.");
+      }
       quotes.push({
         vendor_id: vendor.id,
         amount: String(amount),
+        merchant_name: vendor.isAgent ? agentNameInput?.value.trim() || null : null,
         discount_rate: String(discountPercent / 100),
         voucher_face_value: isAmexTravelVoucherVendor(vendor.id) ? String(voucherFaceValue) : null,
         gst_invoice_available: Boolean(gstInput?.checked),
@@ -1009,6 +1053,8 @@ function collectQuotes() {
           ? $(`#${vendor.id}_outbound_cabin_class`)?.value || "Economy"
           : null,
         flight_sector_count: state.travelType === "flight" ? flightSectorCount(vendor.id) : 1,
+        agent_payment_method: vendor.isAgent ? agentPaymentInput?.value || "bank_transfer" : null,
+        agent_card_id: vendor.isAgent && agentPaymentInput?.value === "card" ? agentCardInput?.value || null : null,
       });
     }
   });
@@ -1024,11 +1070,15 @@ function flightSectorCount(vendorId) {
 
 function collectDetails() {
   const selectedVendorId = state.selectedOption?.vendor_id;
+  const isTravelAgent = Boolean(selectedVendorId && selectedVendorId.startsWith("travel_agent_"));
   const common = {
     employee_name: $("#employeeName").value.trim(),
     booking_for: $("#bookingFor").value.trim(),
     booking_date: $("#travelDate").value,
     description: $("#finalDescription").value.trim(),
+    travel_agent_name: isTravelAgent ? document.querySelector(`[data-agent-name="${selectedVendorId}"]`)?.value.trim() || "" : "",
+    travel_agent_payment_method: isTravelAgent ? document.querySelector(`[data-agent-payment="${selectedVendorId}"]`)?.value || "bank_transfer" : "",
+    travel_agent_card: isTravelAgent ? document.querySelector(`[data-agent-card="${selectedVendorId}"]`)?.value || "" : "",
   };
   if (state.travelType === "flight") {
     const outboundLeg = selectedVendorId ? flightLegValues(selectedVendorId) : {};
@@ -1672,7 +1722,8 @@ function setupDeclineActions() {
 function renderFinalize() {
   const option = state.selectedOption;
   const usesVoucherSplit = isAmexTravelVoucherOption(option);
-  const allowsPointsRedemption = isPointRedemptionCard(option);
+  const isTravelAgentOption = option?.vendor_id?.startsWith("travel_agent_");
+  const allowsPointsRedemption = !isTravelAgentOption && isPointRedemptionCard(option);
   $("#selectedSummary").innerHTML = `
     <strong>${option.card_name}</strong>
     <span>${option.vendor_name}</span>
@@ -1865,7 +1916,10 @@ function collectFormValues() {
       (field.dataset.vendorDiscount ? `discount:${field.dataset.vendorDiscount}` : "") ||
       (field.dataset.vendorVoucher ? `voucher:${field.dataset.vendorVoucher}` : "") ||
       (field.dataset.vendorGst ? `gst:${field.dataset.vendorGst}` : "") ||
-      (field.dataset.vendorLink ? `link:${field.dataset.vendorLink}` : "");
+      (field.dataset.vendorLink ? `link:${field.dataset.vendorLink}` : "") ||
+      (field.dataset.agentName ? `agent-name:${field.dataset.agentName}` : "") ||
+      (field.dataset.agentPayment ? `agent-payment:${field.dataset.agentPayment}` : "") ||
+      (field.dataset.agentCard ? `agent-card:${field.dataset.agentCard}` : "");
     if (key) values[key] = field.type === "checkbox" ? field.checked : field.value;
   });
   return values;
@@ -1879,12 +1933,16 @@ function fillFormValues(values) {
       (key.startsWith("discount:") ? document.querySelector(`[data-vendor-discount="${key.slice(9)}"]`) : null) ||
       (key.startsWith("voucher:") ? document.querySelector(`[data-vendor-voucher="${key.slice(8)}"]`) : null) ||
       (key.startsWith("gst:") ? document.querySelector(`[data-vendor-gst="${key.slice(4)}"]`) : null) ||
-      (key.startsWith("link:") ? document.querySelector(`[data-vendor-link="${key.slice(5)}"]`) : null);
+      (key.startsWith("link:") ? document.querySelector(`[data-vendor-link="${key.slice(5)}"]`) : null) ||
+      (key.startsWith("agent-name:") ? document.querySelector(`[data-agent-name="${key.slice(11)}"]`) : null) ||
+      (key.startsWith("agent-payment:") ? document.querySelector(`[data-agent-payment="${key.slice(14)}"]`) : null) ||
+      (key.startsWith("agent-card:") ? document.querySelector(`[data-agent-card="${key.slice(11)}"]`) : null);
     if (field) {
       if (field.type === "checkbox") field.checked = Boolean(value);
       else field.value = value;
     }
   });
+  setupTravelAgentPaymentControls();
 }
 
 function cancelFlow() {
@@ -2483,6 +2541,9 @@ function transactionSummary(item) {
 }
 
 function vendorDisplayName(vendorId, travelType, details = {}) {
+  if (vendorId?.startsWith("travel_agent_") && details.travel_agent_name) {
+    return `Travel Agent · ${details.travel_agent_name}`;
+  }
   const configuredVendor = vendorsByType[travelType]?.find((vendor) => vendor.id === vendorId)?.name;
   if (configuredVendor) return configuredVendor;
   if (vendorId === "amex_other_voucher") return "Other American Express Voucher";
@@ -2515,6 +2576,10 @@ function transactionDetailsMarkup(item) {
     }
   };
   add("Booking platform", vendorDisplayName(item.vendor_id, item.travel_type, details));
+  if (details.travel_agent_name) add("Travel agent", details.travel_agent_name);
+  if (details.travel_agent_payment_method) {
+    add("Payment method", details.travel_agent_payment_method === "bank_transfer" ? "Bank transfer" : "Card");
+  }
   add("Booking date", formatDate(item.paid_at));
   if (item.travel_type === "flight") {
     add("Route", [details.from, details.to].filter(Boolean).join(" → "));

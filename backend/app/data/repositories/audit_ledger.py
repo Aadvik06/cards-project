@@ -136,6 +136,8 @@ class AuditLedger:
                     hotel_state=quote.get("hotel_state"),
                     flight_class=quote.get("flight_class"),
                     flight_sector_count=quote.get("flight_sector_count", 1),
+                    agent_payment_method=quote.get("agent_payment_method"),
+                    agent_card_id=quote.get("agent_card_id"),
                 )
                 for quote in json.loads(row["quotes_json"])
             ],
@@ -705,6 +707,8 @@ class AuditLedger:
             "hotel_state": quote.hotel_state,
             "flight_class": quote.flight_class,
             "flight_sector_count": quote.flight_sector_count,
+            "agent_payment_method": quote.agent_payment_method,
+            "agent_card_id": quote.agent_card_id,
         }
 
     def _ensure_column(

@@ -26,6 +26,7 @@ AGENT_VENDOR_BY_TYPE = {
 AGENT_CARD_ID = "bank_transfer"
 AGENT_CARD_NAME = "Bank Transfer"
 AGENT_VENDOR_NAME = "Travel Agent"
+AGENT_PAYMENT_CARD_IDS = {"amex", "hdfc_infinia", "icici_times_black"}
 
 
 class RecommendationEngine:
@@ -110,6 +111,29 @@ class RecommendationEngine:
         )
 
     def _agent_option(self, *, quote: QuoteInput, travel_type: TravelType) -> RecommendationOption:
+        payment_method = quote.agent_payment_method or "bank_transfer"
+        if payment_method not in {"bank_transfer", "card"}:
+            raise OptimizerError("Travel Agent payment method must be card or bank transfer.")
+        if payment_method == "card":
+            if quote.agent_card_id not in AGENT_PAYMENT_CARD_IDS:
+                raise OptimizerError("Choose American Express, HDFC Infinia, or ICICI Times Black for a Travel Agent card payment.")
+            card = self.cards[quote.agent_card_id]
+            card_id = card.id
+            card_name = card.name
+            base_points = points(quote.amount * card.base_rate)
+            points_value_rupees = money(base_points * card.point_value_rupees)
+            explanation = (
+                f"Travel Agent is paid using {card.name}. Only normal card points apply; "
+                "no travel multiplier, bonus points, or bonus-cap usage is included."
+            )
+        else:
+            card_id = AGENT_CARD_ID
+            card_name = AGENT_CARD_NAME
+            base_points = points(Decimal("0"))
+            points_value_rupees = money(Decimal("0"))
+            explanation = (
+                "Travel Agent is paid by direct bank transfer. No card rewards or bonus cap impact applies."
+            )
         (
             gst_rate,
             gst_credit,
@@ -126,8 +150,8 @@ class RecommendationEngine:
         return RecommendationOption(
             id=str(uuid4()),
             rank=0,
-            card_id=AGENT_CARD_ID,
-            card_name=AGENT_CARD_NAME,
+            card_id=card_id,
+            card_name=card_name,
             vendor_id=quote.vendor_id,
             vendor_name=AGENT_VENDOR_NAME,
             travel_type=travel_type,
@@ -136,12 +160,12 @@ class RecommendationEngine:
             cash_component=money(Decimal("0")),
             discount_rate=Decimal("0"),
             price_after_discount=money(quote.amount),
-            base_points=points(Decimal("0")),
+            base_points=base_points,
             raw_bonus_points=points(Decimal("0")),
             awarded_bonus_points=points(Decimal("0")),
             capped_bonus_points=points(Decimal("0")),
-            total_points=points(Decimal("0")),
-            points_value_rupees=money(Decimal("0")),
+            total_points=base_points,
+            points_value_rupees=points_value_rupees,
             gst_rate=gst_rate,
             gst_credit=money(gst_credit),
             tax_benefit=money(tax_benefit),
@@ -149,12 +173,9 @@ class RecommendationEngine:
             foreign_transaction=foreign_transaction,
             gst_claimable=gst_claimable,
             gst_note=gst_note,
-            net_cost=money(quote.amount - gst_credit - tax_benefit),
+            net_cost=money(quote.amount - points_value_rupees - gst_credit - tax_benefit),
             cap_remaining_after=points(Decimal("0")),
-            explanation=(
-                "Travel Agent is paid by direct bank transfer. Net cost equals the agent price, "
-                "minus any claimable GST credit, with no card rewards or bonus cap impact."
-            ),
+            explanation=explanation,
         )
 
     def _vendor_for_quote(self, quote: QuoteInput, travel_type: TravelType) -> Vendor:

@@ -146,6 +146,37 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(Decimal("0.0000"), transaction.total_points)
         self.assertEqual(Decimal("9100.00"), transaction.net_cost)
 
+    def test_travel_agent_card_payment_awards_base_points_only(self) -> None:
+        recommendation = self.recommendations.create_recommendation(
+            employee_id="emp-agent-card",
+            travel_type=TravelType.HOTEL,
+            quotes=[
+                QuoteInput(
+                    "travel_agent_hotel",
+                    Decimal("10000"),
+                    agent_payment_method="card",
+                    agent_card_id="hdfc_infinia",
+                )
+            ],
+        )
+        selected = recommendation.ranked_options[0]
+
+        self.assertEqual("hdfc_infinia", selected.card_id)
+        self.assertEqual(Decimal("333.0000"), selected.base_points)
+        self.assertEqual(Decimal("0.0000"), selected.awarded_bonus_points)
+        self.assertEqual(selected.base_points, selected.total_points)
+
+        transaction = self.transactions.finalize_transaction(
+            recommendation_id=recommendation.id,
+            selected_option_id=selected.id,
+            final_amount_paid=Decimal("10000"),
+            paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+        self.assertEqual(Decimal("333.0000"), transaction.base_points)
+        self.assertEqual(Decimal("0.0000"), transaction.bonus_points)
+        self.assertEqual(transaction.base_points, transaction.total_points)
+
     def test_flight_gst_credit_reduces_ranked_net_cost_when_invoice_is_available(self) -> None:
         recommendation = self.recommendations.create_recommendation(
             employee_id="emp-gst-flight",

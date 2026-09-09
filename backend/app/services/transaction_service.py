@@ -7,7 +7,7 @@ from app.core.errors import InvalidDecisionError
 from app.domain.cap_tracker import remaining_bonus_cap
 from app.domain.enums import TravelType
 from app.domain.models import QuoteInput, Recommendation, TransactionRecord, UsageSnapshot
-from app.domain.recommendation_engine import AGENT_CARD_ID
+from app.domain.recommendation_engine import AGENT_CARD_ID, AGENT_VENDOR_BY_TYPE
 from app.services.recommendation_service import RecommendationService
 
 
@@ -65,7 +65,9 @@ class TransactionService:
 
         paid_at = paid_at or datetime.now(UTC)
         original_quote = self._original_quote(recommendation, selected_vendor_id)
-        if selected_card_id == AGENT_CARD_ID:
+        if selected_vendor_id == AGENT_VENDOR_BY_TYPE.get(recommendation.travel_type):
+            if points_used:
+                raise InvalidDecisionError("Reward-point redemption is not available for Travel Agent bookings.")
             (
                 gst_rate,
                 gst_credit,
@@ -79,6 +81,18 @@ class TransactionService:
                 travel_type=recommendation.travel_type,
                 gst_base_amount=final_amount_paid,
             )
+            if selected_card_id == AGENT_CARD_ID:
+                base_points = points(Decimal("0"))
+                points_value_rupees = money(Decimal("0"))
+            else:
+                card = next(
+                    (item for item in self.recommendation_service.cards if item.id == selected_card_id),
+                    None,
+                )
+                if card is None:
+                    raise InvalidDecisionError("Selected card is not available for the Travel Agent booking.")
+                base_points = points(final_amount_paid * card.base_rate)
+                points_value_rupees = money(base_points * card.point_value_rupees)
             transaction = TransactionRecord(
                 id=str(uuid4()),
                 recommendation_id=recommendation_id,
@@ -88,17 +102,17 @@ class TransactionService:
                 vendor_id=selected_vendor_id,
                 final_amount_paid=money(final_amount_paid),
                 discount_rate=Decimal("0"),
-                base_points=points(Decimal("0")),
+                base_points=base_points,
                 bonus_points=points(Decimal("0")),
-                total_points=points(Decimal("0")),
-                points_value_rupees=money(Decimal("0")),
+                total_points=base_points,
+                points_value_rupees=points_value_rupees,
                 points_used=points(Decimal("0")),
                 gst_rate=gst_rate,
                 gst_credit=money(gst_credit),
                 tax_benefit=money(tax_benefit),
                 deductible_expense=money(deductible_expense),
                 foreign_transaction=foreign_transaction,
-                net_cost=money(final_amount_paid - gst_credit - tax_benefit),
+                net_cost=money(final_amount_paid - points_value_rupees - gst_credit - tax_benefit),
                 paid_at=paid_at,
                 details=details or {},
             )
