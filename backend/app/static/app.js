@@ -990,9 +990,6 @@ function collectQuotes() {
       if (state.travelType === "hotel" && $("#hotelState")?.value === "Outside India" && !$("#hotelOutsideLocation")?.value.trim()) {
         throw new Error("Enter the hotel country or state outside India.");
       }
-      if (isAmexTravelVoucherVendor(vendor.id) && voucherFaceValue <= 0) {
-        throw new Error("Enter the voucher value for each Amex voucher option with a price.");
-      }
       if (isAmexTravelVoucherVendor(vendor.id) && voucherFaceValue > amount) {
         throw new Error("Voucher value cannot be higher than the booking price.");
       }

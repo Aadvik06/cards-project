@@ -440,6 +440,40 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(Decimal("2700.0000"), transaction.bonus_points)
         self.assertEqual(Decimal("3060.0000"), transaction.total_points)
 
+    def test_amex_travel_voucher_allows_zero_voucher_value(self) -> None:
+        recommendation = self.recommendations.create_recommendation(
+            employee_id="emp-no-voucher-used",
+            travel_type=TravelType.FLIGHT,
+            quotes=[
+                QuoteInput(
+                    "amex_mmt_flight_voucher",
+                    Decimal("12000"),
+                    voucher_face_value=Decimal("0"),
+                )
+            ],
+        )
+        selected = recommendation.ranked_options[0]
+
+        self.assertEqual(Decimal("0.00"), selected.eligible_amount)
+        self.assertEqual(Decimal("12000.00"), selected.cash_component)
+        self.assertEqual(Decimal("0.0000"), selected.awarded_bonus_points)
+
+        transaction = self.transactions.finalize_transaction(
+            recommendation_id=recommendation.id,
+            selected_option_id=selected.id,
+            final_amount_paid=Decimal("12000"),
+            paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            details={
+                "description": "Voucher option selected without using a voucher.",
+                "voucher_face_value_used": "0",
+                "voucher_purchase_amount_paid": "0",
+                "card_balance_paid": "12000",
+            },
+        )
+
+        self.assertEqual(Decimal("0.0000"), transaction.bonus_points)
+        self.assertEqual(Decimal("360.0000"), transaction.total_points)
+
     def test_points_redeemed_reduce_rewardable_spend_for_hdfc(self) -> None:
         recommendation = self.recommendations.create_recommendation(
             employee_id="emp-redemption",
