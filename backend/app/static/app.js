@@ -333,9 +333,11 @@ function showBookingPanel(name) {
   $("#bookingView").classList.remove("is-hidden");
   $("#transactionsView").classList.add("is-hidden");
   $("#draftsView").classList.add("is-hidden");
+  $("#invoicesView").classList.add("is-hidden");
   $("#bookingTab").classList.add("is-active");
   $("#transactionsTab").classList.remove("is-active");
   $("#draftsTab").classList.remove("is-active");
+  $("#invoicesTab").classList.remove("is-active");
 
   Object.values(panels).forEach((panel) => panel.classList.add("is-hidden"));
   panels[name].classList.remove("is-hidden");
@@ -644,6 +646,7 @@ function setupTabs() {
   $("#bookingTab").addEventListener("click", () => showBookingPanel("trip"));
   $("#draftsTab").addEventListener("click", loadDrafts);
   $("#transactionsTab").addEventListener("click", loadTransactions);
+  $("#invoicesTab").addEventListener("click", loadInvoices);
 }
 
 function setupStepNavigation() {
@@ -1955,10 +1958,12 @@ async function downloadReport(url) {
 async function loadTransactions() {
   $("#bookingView").classList.add("is-hidden");
   $("#draftsView").classList.add("is-hidden");
+  $("#invoicesView").classList.add("is-hidden");
   $("#transactionsView").classList.remove("is-hidden");
   $("#transactionsTab").classList.add("is-active");
   $("#bookingTab").classList.remove("is-active");
   $("#draftsTab").classList.remove("is-active");
+  $("#invoicesTab").classList.remove("is-active");
 
   try {
     setStatus("Loading");
@@ -1982,6 +1987,108 @@ async function loadTransactions() {
     setStatus("Ready");
     showToast("Could not load past transactions.", true);
   }
+}
+
+async function loadInvoices() {
+  $("#bookingView").classList.add("is-hidden");
+  $("#draftsView").classList.add("is-hidden");
+  $("#transactionsView").classList.add("is-hidden");
+  $("#invoicesView").classList.remove("is-hidden");
+  $("#invoicesTab").classList.add("is-active");
+  $("#bookingTab").classList.remove("is-active");
+  $("#draftsTab").classList.remove("is-active");
+  $("#transactionsTab").classList.remove("is-active");
+
+  try {
+    setStatus("Loading invoices");
+    const response = await fetch("/invoices", { headers: await authHeaders() });
+    if (!response.ok) throw new Error("Could not load invoices.");
+    renderInvoiceArchive(await response.json());
+    setStatus("Ready");
+  } catch (error) {
+    setStatus("Ready");
+    showToast(error.message || "Could not load invoices.", true);
+  }
+}
+
+function renderInvoiceArchive(invoices) {
+  const list = $("#invoiceArchiveList");
+  if (!invoices.length) {
+    list.innerHTML = `<p class="empty-state">No invoices have been uploaded yet.</p>`;
+    return;
+  }
+  const byMonth = new Map();
+  invoices.forEach((invoice) => {
+    const date = new Date(invoice.paid_at);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    if (!byMonth.has(key)) byMonth.set(key, { label: formatMonth(invoice.paid_at), invoices: [] });
+    byMonth.get(key).invoices.push(invoice);
+  });
+  list.innerHTML = [...byMonth.entries()].map(([key, group]) => `
+    <article class="invoice-archive-month">
+      <div>
+        <h3>${escapeHtml(group.label)}</h3>
+        <p>${group.invoices.length} invoice${group.invoices.length === 1 ? "" : "s"} available</p>
+      </div>
+      <button class="primary compact" data-download-invoice-month="${key}" type="button">Download all</button>
+    </article>
+  `).join("");
+  $$('[data-download-invoice-month]').forEach((button) => {
+    button.addEventListener("click", () => downloadInvoiceMonth(button.dataset.downloadInvoiceMonth, byMonth.get(button.dataset.downloadInvoiceMonth)));
+  });
+}
+
+async function downloadInvoiceMonth(monthKey, group) {
+  if (!window.JSZip) {
+    showToast("Invoice archive download is unavailable. Please refresh and try again.", true);
+    return;
+  }
+  const [year, month] = monthKey.split("-");
+  const zip = new window.JSZip();
+  const usedNames = new Set();
+  try {
+    for (let index = 0; index < group.invoices.length; index += 1) {
+      const invoice = group.invoices[index];
+      setStatus(`Preparing invoices (${index + 1}/${group.invoices.length})`);
+      const response = await fetch(`/transactions/${invoice.transaction_id}/invoice`, { headers: await authHeaders() });
+      if (!response.ok) throw new Error(`Could not add ${invoice.filename} to the archive.`);
+      const filename = uniqueArchiveFilename(invoice.filename || "invoice", usedNames);
+      zip.file(filename, await response.blob());
+    }
+    const archive = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+    const url = URL.createObjectURL(archive);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `precisehub-invoices-${year}-${month}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 300000);
+    showToast(`${group.invoices.length} invoice${group.invoices.length === 1 ? "" : "s"} downloaded.`);
+  } catch (error) {
+    showToast(error.message || "Could not download the invoice archive.", true);
+  } finally {
+    setStatus("Ready");
+  }
+}
+
+function uniqueArchiveFilename(filename, usedNames) {
+  const safeName = filename.replace(/[\\/:*?"<>|]/g, "-") || "invoice";
+  if (!usedNames.has(safeName)) {
+    usedNames.add(safeName);
+    return safeName;
+  }
+  const dot = safeName.lastIndexOf(".");
+  const base = dot > 0 ? safeName.slice(0, dot) : safeName;
+  const extension = dot > 0 ? safeName.slice(dot) : "";
+  let number = 2;
+  let candidate = `${base}-${number}${extension}`;
+  while (usedNames.has(candidate)) {
+    number += 1;
+    candidate = `${base}-${number}${extension}`;
+  }
+  usedNames.add(candidate);
+  return candidate;
 }
 
 function renderInvoiceStorage(storage) {
@@ -2008,10 +2115,12 @@ function renderInvoiceStorage(storage) {
 async function loadDrafts() {
   $("#bookingView").classList.add("is-hidden");
   $("#transactionsView").classList.add("is-hidden");
+  $("#invoicesView").classList.add("is-hidden");
   $("#draftsView").classList.remove("is-hidden");
   $("#bookingTab").classList.remove("is-active");
   $("#transactionsTab").classList.remove("is-active");
   $("#draftsTab").classList.add("is-active");
+  $("#invoicesTab").classList.remove("is-active");
 
   try {
     setStatus("Loading");

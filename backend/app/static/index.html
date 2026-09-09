@@ -56,6 +56,7 @@
         <button class="tab-button is-active" id="bookingTab" type="button">Booking</button>
         <button class="tab-button" id="draftsTab" type="button">Drafts</button>
         <button class="tab-button" id="transactionsTab" type="button">Past transactions</button>
+        <button class="tab-button" id="invoicesTab" type="button">Invoices</button>
         <button class="secondary compact is-hidden" id="logoutButton" type="button">Logout</button>
         <div class="status-pill" id="saveStatus">Ready</div>
       </div>
@@ -304,11 +305,21 @@
         </div>
         <div class="draft-list" id="draftList"></div>
       </section>
+
+      <section class="panel is-hidden" id="invoicesView">
+        <div class="section-head">
+          <p class="eyebrow">Accounts</p>
+          <h2>Invoices by month</h2>
+          <p>Download all available invoice files for a month in one ZIP file.</p>
+        </div>
+        <div class="invoice-archive-list" id="invoiceArchiveList"></div>
+      </section>
     </main>
 
     <div class="toast is-hidden" id="toast"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="/static/app.js?v=20260821-tax-benefit-gst"></script>
   </body>
 </html>

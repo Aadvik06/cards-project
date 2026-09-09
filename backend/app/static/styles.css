@@ -1086,6 +1086,38 @@ textarea:focus {
 .storage-note.is-warning { color: #8a5a00; font-weight: 700; }
 .storage-note.is-critical { color: #b42318; font-weight: 700; }
 
+.invoice-archive-list {
+  display: grid;
+  gap: 10px;
+}
+
+.invoice-archive-month {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 17px 18px;
+  border: 1px solid rgba(22, 58, 102, 0.15);
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f8fbfa, #ffffff);
+}
+
+.invoice-archive-month h3,
+.invoice-archive-month p {
+  margin: 0;
+}
+
+.invoice-archive-month h3 {
+  color: var(--ink);
+  font-size: 17px;
+}
+
+.invoice-archive-month p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .transaction-actions {
   justify-content: flex-end;
 }
@@ -2087,6 +2119,11 @@ select:disabled {
 
   .invoice-storage-panel {
     grid-template-columns: 1fr;
+  }
+
+  .invoice-archive-month {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .transaction-row .transaction-overview,

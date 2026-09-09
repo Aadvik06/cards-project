@@ -333,6 +333,22 @@ class AuditLedger:
             ).fetchone()
         return self._dict(row) if row is not None else None
 
+    def read_invoices(self) -> list[dict[str, Any]]:
+        """Return audit-friendly invoice metadata without loading file contents."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT transaction_invoices.transaction_id, transaction_invoices.filename,
+                       transaction_invoices.content_type, transaction_invoices.uploaded_at,
+                       LENGTH(transaction_invoices.file_data) AS file_size_bytes,
+                       transactions.paid_at
+                FROM transaction_invoices
+                INNER JOIN transactions ON transactions.id = transaction_invoices.transaction_id
+                ORDER BY transactions.paid_at DESC
+                """
+            ).fetchall()
+        return [self._dict(row) for row in rows]
+
     def delete_invoice(self, transaction_id: str) -> bool:
         with self._connect() as connection:
             cursor = connection.execute(

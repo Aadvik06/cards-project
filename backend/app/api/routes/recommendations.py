@@ -130,6 +130,11 @@ def get_invoice_storage_summary() -> dict:
     return get_monthly_log_service().ledger.invoice_storage_summary(INVOICE_ARCHIVE_ALLOCATION_BYTES)
 
 
+@router.get("/invoices")
+def get_invoices() -> list[dict]:
+    return get_monthly_log_service().ledger.read_invoices()
+
+
 @router.delete("/transactions/{transaction_id}")
 def delete_transaction(transaction_id: str) -> dict:
     deleted = get_monthly_log_service().delete_transaction(transaction_id)
