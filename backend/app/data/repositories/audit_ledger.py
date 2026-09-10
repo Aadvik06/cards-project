@@ -374,14 +374,25 @@ class AuditLedger:
 
     def read_cloud_invoices(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
-            rows = connection.execute("""
+            cloud_rows = connection.execute("""
                 SELECT transaction_invoice_files.id, transaction_invoice_files.transaction_id, transaction_invoice_files.filename,
                        transaction_invoice_files.content_type, transaction_invoice_files.storage_path, transaction_invoice_files.storage_size_bytes AS file_size_bytes,
                        transaction_invoice_files.uploaded_at, transactions.paid_at, transactions.card_id
                 FROM transaction_invoice_files INNER JOIN transactions ON transactions.id = transaction_invoice_files.transaction_id
                 ORDER BY transactions.paid_at DESC, transaction_invoice_files.uploaded_at ASC
             """).fetchall()
-        return [self._dict(row) for row in rows]
+            legacy_rows = connection.execute("""
+                SELECT transaction_invoices.transaction_id, transaction_invoices.filename, transaction_invoices.content_type,
+                       transaction_invoices.storage_path, COALESCE(transaction_invoices.storage_size_bytes, LENGTH(transaction_invoices.file_data)) AS file_size_bytes,
+                       transaction_invoices.uploaded_at, transactions.paid_at, transactions.card_id
+                FROM transaction_invoices INNER JOIN transactions ON transactions.id = transaction_invoices.transaction_id
+            """).fetchall()
+        invoices = [self._dict(row) for row in cloud_rows]
+        for row in legacy_rows:
+            invoice = self._dict(row)
+            invoice["id"] = f"legacy:{invoice['transaction_id']}"
+            invoices.append(invoice)
+        return sorted(invoices, key=lambda invoice: (invoice["paid_at"], invoice["uploaded_at"]), reverse=True)
 
     def get_cloud_invoice(self, invoice_id: str) -> dict[str, Any] | None:
         with self._connect() as connection:
