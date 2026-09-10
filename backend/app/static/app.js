@@ -2089,17 +2089,41 @@ function renderInvoiceArchive(invoices) {
     if (!byMonth.has(key)) byMonth.set(key, { label: formatMonth(invoice.paid_at), invoices: [] });
     byMonth.get(key).invoices.push(invoice);
   });
+  const cardGroups = ["amex", "hdfc_infinia", "icici_times_black", "bank_transfer"];
   list.innerHTML = [...byMonth.entries()].map(([key, group]) => `
     <article class="invoice-archive-month">
-      <div>
+      <div class="invoice-month-heading">
         <h3>${escapeHtml(group.label)}</h3>
         <p>${group.invoices.length} invoice${group.invoices.length === 1 ? "" : "s"} available</p>
       </div>
       <button class="primary compact" data-download-invoice-month="${key}" type="button">Download all</button>
+      <div class="invoice-card-groups">
+        ${cardGroups.map((cardId) => {
+          const cardInvoices = group.invoices.filter((invoice) => invoice.card_id === cardId);
+          const cardName = formatCardName(cardId);
+          return `<section class="invoice-card-group ${cardInvoices.length ? "" : "is-empty"}">
+            <div class="invoice-card-group-heading">
+              <div><strong>${escapeHtml(cardName)}</strong><span>${cardInvoices.length} invoice${cardInvoices.length === 1 ? "" : "s"}</span></div>
+              <button class="secondary compact" data-download-invoice-card="${key}:${cardId}" type="button" ${cardInvoices.length ? "" : "disabled"}>Download all</button>
+            </div>
+            ${cardInvoices.length ? `<ul>${cardInvoices.map((invoice) => `<li><span>${escapeHtml(invoice.filename)}</span><button class="invoice-text-action" data-download-invoice-file="${invoice.id}" data-invoice-name="${escapeHtml(invoice.filename)}" type="button">Download</button></li>`).join("")}</ul>` : `<p>No invoices this month.</p>`}
+          </section>`;
+        }).join("")}
+      </div>
     </article>
   `).join("");
   $$('[data-download-invoice-month]').forEach((button) => {
     button.addEventListener("click", () => downloadInvoiceMonth(button.dataset.downloadInvoiceMonth, byMonth.get(button.dataset.downloadInvoiceMonth)));
+  });
+  $$('[data-download-invoice-card]').forEach((button) => {
+    button.addEventListener("click", () => {
+      const [monthKey, cardId] = button.dataset.downloadInvoiceCard.split(":");
+      const invoiceGroup = byMonth.get(monthKey);
+      downloadInvoiceMonth(`${monthKey}-${cardId}`, { invoices: invoiceGroup.invoices.filter((invoice) => invoice.card_id === cardId) });
+    });
+  });
+  $$('[data-download-invoice-file]').forEach((button) => {
+    button.addEventListener("click", () => downloadInvoiceFile(button.dataset.downloadInvoiceFile, button.dataset.invoiceName));
   });
 }
 
@@ -2108,14 +2132,14 @@ async function downloadInvoiceMonth(monthKey, group) {
     showToast("Invoice archive download is unavailable. Please refresh and try again.", true);
     return;
   }
-  const [year, month] = monthKey.split("-");
+  const [year, month, cardId] = monthKey.split("-");
   const zip = new window.JSZip();
   const usedNames = new Set();
   try {
     for (let index = 0; index < group.invoices.length; index += 1) {
       const invoice = group.invoices[index];
       setStatus(`Preparing invoices (${index + 1}/${group.invoices.length})`);
-      const response = await fetch(`/transactions/${invoice.transaction_id}/invoice`, { headers: await authHeaders() });
+      const response = await fetch(`/invoices/${invoice.id}/file`, { headers: await authHeaders() });
       if (!response.ok) throw new Error(`Could not add ${invoice.filename} to the archive.`);
       const filename = uniqueArchiveFilename(invoice.filename || "invoice", usedNames);
       zip.file(filename, await response.blob());
@@ -2124,7 +2148,7 @@ async function downloadInvoiceMonth(monthKey, group) {
     const url = URL.createObjectURL(archive);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `precisehub-invoices-${year}-${month}.zip`;
+    link.download = `precisehub-invoices-${year}-${month}${cardId ? `-${cardId}` : ""}.zip`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -2503,22 +2527,16 @@ function transactionEditFields(travelType, details) {
 }
 
 function transactionInvoicePanel(item) {
-  const uploaded = item.invoice_status === "uploaded";
-  const invoice = item.invoice;
+  const invoices = item.invoices || [];
+  const uploaded = invoices.length > 0;
   return `
     <section class="transaction-invoice-panel ${uploaded ? "is-uploaded" : "is-pending"}" aria-label="Invoice record">
       <div class="transaction-invoice-heading">
         <span class="invoice-panel-status ${uploaded ? "is-uploaded" : ""}">Invoice ${uploaded ? "uploaded" : "pending"}</span>
-        <small>${uploaded ? escapeHtml(invoice?.filename || "Invoice saved for audit") : "Optional audit record"}</small>
+        <small>${uploaded ? `${invoices.length} file${invoices.length === 1 ? "" : "s"} saved for audit` : "Optional audit record"}</small>
       </div>
-      ${uploaded ? `
-        <div class="invoice-panel-actions">
-          <button class="secondary compact" data-view-invoice="${item.id}" type="button">View</button>
-          <button class="secondary compact" data-download-invoice="${item.id}" data-invoice-name="${escapeHtml(invoice?.filename || "invoice")}" type="button">Download</button>
-          <button class="invoice-text-action" data-delete-invoice="${item.id}" type="button">Remove invoice</button>
-        </div>
-      ` : ""}
-      <div class="invoice-panel-upload">${invoiceUploadControl(item.id, invoice)}</div>
+      ${uploaded ? `<div class="invoice-file-list">${invoices.map((invoice) => `<div><span>${escapeHtml(invoice.filename)}</span><button class="secondary compact" data-download-invoice-file="${invoice.id}" data-invoice-name="${escapeHtml(invoice.filename)}" type="button">Download</button><button class="invoice-text-action" data-delete-invoice-file="${invoice.id}" type="button">Remove</button></div>`).join("")}</div>` : ""}
+      <div class="invoice-panel-upload">${invoiceUploadControl(item.id)}</div>
     </section>
   `;
 }
@@ -2614,18 +2632,18 @@ function transactionDetailsMarkup(item) {
   return rows.join("");
 }
 
-function invoiceUploadControl(transactionId, invoice) {
+function invoiceUploadControl(transactionId) {
   return `
     <div class="invoice-upload-control">
       <label class="invoice-file-input">
-        <input data-invoice-file="${transactionId}" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" />
+        <input data-invoice-file="${transactionId}" type="file" multiple accept="application/pdf,image/jpeg,image/png,image/webp" />
         <span class="invoice-file-icon" aria-hidden="true">↑</span>
         <span class="invoice-file-copy">
-          <strong>${invoice ? "Choose a replacement" : "Choose invoice"}</strong>
-          <small data-invoice-file-label="${transactionId}">PDF, JPG, PNG or WEBP · up to 50 MB</small>
+          <strong>Drop files here or choose invoices</strong>
+          <small data-invoice-file-label="${transactionId}">Multiple PDF, JPG, PNG or WEBP files · up to 50 MB each</small>
         </span>
       </label>
-      <button class="primary compact" data-save-invoice="${transactionId}" type="button">${invoice ? "Replace invoice" : "Upload invoice"}</button>
+      <button class="primary compact" data-save-invoice="${transactionId}" type="button">Upload files</button>
     </div>
   `;
 }
@@ -2647,13 +2665,30 @@ function renderInvoiceUpload(transactionId, invoice, targetSelector) {
 }
 
 function setupInvoiceActions() {
+  $$(".invoice-file-input").forEach((dropzone) => {
+    if (dropzone.dataset.dropBound) return;
+    dropzone.dataset.dropBound = "true";
+    dropzone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      dropzone.classList.add("is-dragging");
+    });
+    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("is-dragging"));
+    dropzone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dropzone.classList.remove("is-dragging");
+      const input = dropzone.querySelector("input[type=file]");
+      if (!input || !event.dataTransfer?.files?.length) return;
+      input.files = event.dataTransfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
   $$("[data-invoice-file]").forEach((input) => {
     if (input.dataset.bound) return;
     input.dataset.bound = "true";
     input.addEventListener("change", () => {
       const label = document.querySelector(`[data-invoice-file-label="${input.dataset.invoiceFile}"]`);
-      const file = input.files?.[0];
-      if (label) label.textContent = file ? `${file.name} · ${formatFileSize(file.size)}` : "PDF, JPG, PNG or WEBP · up to 50 MB";
+      const files = [...(input.files || [])];
+      if (label) label.textContent = files.length ? `${files.length} file${files.length === 1 ? "" : "s"} selected` : "Multiple PDF, JPG, PNG or WEBP files · up to 50 MB each";
     });
   });
   $$("[data-save-invoice]").forEach((button) => {
@@ -2661,35 +2696,29 @@ function setupInvoiceActions() {
     button.dataset.bound = "true";
     button.addEventListener("click", async () => {
       const transactionId = button.dataset.saveInvoice;
-      const file = document.querySelector(`[data-invoice-file="${transactionId}"]`)?.files?.[0];
-      if (!file) {
-        showToast("Choose an invoice file first.", true);
+      const files = [...(document.querySelector(`[data-invoice-file="${transactionId}"]`)?.files || [])];
+      if (!files.length) {
+        showToast("Choose one or more invoice files first.", true);
         return;
       }
-      if (file.size > MAX_INVOICE_UPLOAD_BYTES) {
+      if (files.some((file) => file.size > MAX_INVOICE_UPLOAD_BYTES)) {
         showToast("Invoice files must be 50 MB or smaller.", true);
         return;
       }
       try {
         setStatus("Uploading invoice");
-        const uploadRequest = {
-          filename: file.name,
-          content_type: file.type,
-          file_size_bytes: file.size,
-        };
-        const prepared = await postJson(`/transactions/${transactionId}/invoice/upload-url`, uploadRequest);
-        const { error: uploadError } = await auth.client.storage
-          .from(prepared.bucket)
-          .uploadToSignedUrl(prepared.storage_path, prepared.token, file, { contentType: file.type });
-        if (uploadError) throw new Error(uploadError.message || "Could not upload the invoice.");
-        const data = await postJson(`/transactions/${transactionId}/invoice/complete`, {
-          ...uploadRequest,
-          storage_path: prepared.storage_path,
-        });
+        for (const file of files) {
+          const uploadRequest = { filename: file.name, content_type: file.type, file_size_bytes: file.size };
+          const prepared = await postJson(`/transactions/${transactionId}/invoice/upload-url`, uploadRequest);
+          const { error: uploadError } = await auth.client.storage.from(prepared.bucket)
+            .uploadToSignedUrl(prepared.storage_path, prepared.token, file, { contentType: file.type });
+          if (uploadError) throw new Error(uploadError.message || "Could not upload the invoice.");
+          await postJson(`/transactions/${transactionId}/invoice/complete`, { ...uploadRequest, storage_path: prepared.storage_path });
+        }
         setStatus("Saved");
-        showToast("Invoice uploaded.");
+        showToast(`${files.length} invoice file${files.length === 1 ? "" : "s"} uploaded.`);
         if ($("#transactionsView").classList.contains("is-hidden")) {
-          renderInvoiceUpload(transactionId, data, "#completedInvoicePanel");
+          renderInvoiceUpload(transactionId, null, "#completedInvoicePanel");
         } else {
           await loadTransactions();
         }
@@ -2708,6 +2737,20 @@ function setupInvoiceActions() {
     if (button.dataset.bound) return;
     button.dataset.bound = "true";
     button.addEventListener("click", () => downloadInvoice(button.dataset.downloadInvoice, button.dataset.invoiceName));
+  });
+  $$("[data-download-invoice-file]").forEach((button) => {
+    if (button.dataset.bound) return;
+    button.dataset.bound = "true";
+    button.addEventListener("click", () => downloadInvoiceFile(button.dataset.downloadInvoiceFile, button.dataset.invoiceName));
+  });
+  $$("[data-delete-invoice-file]").forEach((button) => {
+    if (button.dataset.bound) return;
+    button.dataset.bound = "true";
+    button.addEventListener("click", async () => {
+      if (!window.confirm("Remove this invoice file?")) return;
+      await deleteJson(`/invoices/${button.dataset.deleteInvoiceFile}`);
+      await loadTransactions();
+    });
   });
   $$("[data-delete-invoice]").forEach((button) => {
     if (button.dataset.bound) return;
@@ -2753,6 +2796,23 @@ async function downloadInvoice(transactionId, filename = "invoice") {
     const link = document.createElement("a");
     link.href = objectUrl;
     link.download = filename || "invoice";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 300000);
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+async function downloadInvoiceFile(invoiceId, filename = "invoice") {
+  try {
+    const response = await fetch(`/invoices/${invoiceId}/file`, { headers: await authHeaders() });
+    if (!response.ok) throw new Error("Could not download the invoice.");
+    const objectUrl = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     link.remove();

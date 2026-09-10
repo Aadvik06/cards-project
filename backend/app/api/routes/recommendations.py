@@ -140,7 +140,7 @@ def get_invoice_storage_summary() -> dict:
 
 @router.get("/invoices")
 def get_invoices() -> list[dict]:
-    return get_monthly_log_service().ledger.read_invoices()
+    return get_monthly_log_service().ledger.read_cloud_invoices()
 
 
 @router.delete("/transactions/{transaction_id}")
@@ -258,6 +258,39 @@ def delete_invoice(transaction_id: str) -> dict:
     if not deleted:
         raise HTTPException(status_code=404, detail="No invoice has been uploaded for this transaction.")
     return {"deleted": True, "transaction_id": transaction_id}
+
+
+@router.get("/invoices/{invoice_id}/file")
+def get_cloud_invoice_file(invoice_id: str) -> Response:
+    if invoice_id.startswith("legacy:"):
+        return get_invoice(invoice_id.removeprefix("legacy:"))
+    invoice = get_monthly_log_service().ledger.get_cloud_invoice(invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="Invoice not found.")
+    try:
+        url = SupabaseInvoiceStorage().signed_download_url(invoice["storage_path"], invoice["filename"])
+    except InvoiceStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return RedirectResponse(url=url, status_code=307)
+
+
+@router.delete("/invoices/{invoice_id}")
+def delete_cloud_invoice(invoice_id: str) -> dict:
+    ledger = get_monthly_log_service().ledger
+    if invoice_id.startswith("legacy:"):
+        deleted = ledger.delete_invoice(invoice_id.removeprefix("legacy:"))
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Invoice not found.")
+        return {"deleted": True, "invoice_id": invoice_id}
+    invoice = ledger.get_cloud_invoice(invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="Invoice not found.")
+    try:
+        SupabaseInvoiceStorage().delete(invoice["storage_path"])
+    except InvoiceStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    ledger.delete_cloud_invoice(invoice_id)
+    return {"deleted": True, "invoice_id": invoice_id}
 
 
 @router.get("/drafts", response_model=list[DraftResponse])

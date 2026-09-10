@@ -230,15 +230,22 @@ class AuditLedger:
             rows = connection.execute(
                 "SELECT * FROM transactions ORDER BY paid_at ASC"
             ).fetchall()
-            invoices = connection.execute(
-                "SELECT transaction_id, filename, content_type, uploaded_at, storage_path, storage_size_bytes, LENGTH(file_data) AS file_size_bytes FROM transaction_invoices"
-            ).fetchall()
-        invoice_by_transaction = {row["transaction_id"]: self._dict(row) for row in invoices}
+            invoices = connection.execute("SELECT id, transaction_id, filename, content_type, uploaded_at, storage_path, storage_size_bytes FROM transaction_invoice_files ORDER BY uploaded_at ASC").fetchall()
+            legacy_invoices = connection.execute("SELECT transaction_id, filename, content_type, uploaded_at, storage_path, storage_size_bytes FROM transaction_invoices").fetchall()
+        invoice_by_transaction: dict[str, list[dict[str, Any]]] = {}
+        for row in invoices:
+            invoice = self._dict(row)
+            invoice_by_transaction.setdefault(invoice["transaction_id"], []).append(invoice)
+        for row in legacy_invoices:
+            invoice = self._dict(row)
+            invoice["id"] = f"legacy:{invoice['transaction_id']}"
+            invoice_by_transaction.setdefault(invoice["transaction_id"], []).append(invoice)
         transactions = [self._dict(row) for row in rows]
         for transaction in transactions:
-            invoice = invoice_by_transaction.get(transaction["id"])
-            transaction["invoice_status"] = "uploaded" if invoice else "pending"
-            transaction["invoice"] = invoice
+            files = invoice_by_transaction.get(transaction["id"], [])
+            transaction["invoice_status"] = "uploaded" if files else "pending"
+            transaction["invoice"] = files[0] if files else None
+            transaction["invoices"] = files
         return transactions
 
     def invoice_storage_summary(self, allocation_bytes: int) -> dict[str, int]:
@@ -341,17 +348,13 @@ class AuditLedger:
             if exists is None:
                 raise ValueError("Transaction not found.")
             uploaded_at = datetime.now().isoformat()
+            invoice_id = str(uuid4())
             placeholders = "%s, %s, %s, %s, %s, %s, %s" if self.database_url else "?, ?, ?, ?, ?, ?, ?"
-            update = "EXCLUDED" if self.database_url else "excluded"
             connection.execute(
-                f"""INSERT INTO transaction_invoices (transaction_id, filename, content_type, file_data, uploaded_at, storage_path, storage_size_bytes)
-                VALUES ({placeholders})
-                ON CONFLICT(transaction_id) DO UPDATE SET filename = {update}.filename, content_type = {update}.content_type,
-                file_data = {update}.file_data, uploaded_at = {update}.uploaded_at, storage_path = {update}.storage_path,
-                storage_size_bytes = {update}.storage_size_bytes""",
-                (transaction_id, filename, content_type, b"", uploaded_at, storage_path, file_size_bytes),
+                f"INSERT INTO transaction_invoice_files (id, transaction_id, filename, content_type, storage_path, storage_size_bytes, uploaded_at) VALUES ({placeholders})",
+                (invoice_id, transaction_id, filename, content_type, storage_path, file_size_bytes, uploaded_at),
             )
-        return {"transaction_id": transaction_id, "filename": filename, "content_type": content_type, "uploaded_at": uploaded_at, "invoice_status": "uploaded", "storage_path": storage_path}
+        return {"id": invoice_id, "transaction_id": transaction_id, "filename": filename, "content_type": content_type, "uploaded_at": uploaded_at, "invoice_status": "uploaded", "storage_path": storage_path, "storage_size_bytes": file_size_bytes}
 
     def read_invoices(self) -> list[dict[str, Any]]:
         """Return audit-friendly invoice metadata without loading file contents."""
@@ -361,13 +364,34 @@ class AuditLedger:
                 SELECT transaction_invoices.transaction_id, transaction_invoices.filename,
                        transaction_invoices.content_type, transaction_invoices.uploaded_at,
                        COALESCE(transaction_invoices.storage_size_bytes, LENGTH(transaction_invoices.file_data)) AS file_size_bytes,
-                       transactions.paid_at
+                       transactions.paid_at, transactions.card_id
                 FROM transaction_invoices
                 INNER JOIN transactions ON transactions.id = transaction_invoices.transaction_id
                 ORDER BY transactions.paid_at DESC
                 """
             ).fetchall()
         return [self._dict(row) for row in rows]
+
+    def read_cloud_invoices(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute("""
+                SELECT transaction_invoice_files.id, transaction_invoice_files.transaction_id, transaction_invoice_files.filename,
+                       transaction_invoice_files.content_type, transaction_invoice_files.storage_path, transaction_invoice_files.storage_size_bytes AS file_size_bytes,
+                       transaction_invoice_files.uploaded_at, transactions.paid_at, transactions.card_id
+                FROM transaction_invoice_files INNER JOIN transactions ON transactions.id = transaction_invoice_files.transaction_id
+                ORDER BY transactions.paid_at DESC, transaction_invoice_files.uploaded_at ASC
+            """).fetchall()
+        return [self._dict(row) for row in rows]
+
+    def get_cloud_invoice(self, invoice_id: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(self._sql("SELECT * FROM transaction_invoice_files WHERE id = ?"), (invoice_id,)).fetchone()
+        return self._dict(row) if row is not None else None
+
+    def delete_cloud_invoice(self, invoice_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(self._sql("DELETE FROM transaction_invoice_files WHERE id = ?"), (invoice_id,))
+            return cursor.rowcount > 0
 
     def delete_invoice(self, transaction_id: str) -> bool:
         with self._connect() as connection:
@@ -705,6 +729,18 @@ class AuditLedger:
                 filename TEXT NOT NULL,
                 content_type TEXT NOT NULL,
                 file_data {"BYTEA" if self.database_url else "BLOB"} NOT NULL,
+                uploaded_at TEXT NOT NULL,
+                FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS transaction_invoice_files (
+                id TEXT PRIMARY KEY,
+                transaction_id TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                storage_path TEXT NOT NULL,
+                storage_size_bytes INTEGER NOT NULL,
                 uploaded_at TEXT NOT NULL,
                 FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
             )

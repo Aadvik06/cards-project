@@ -1124,6 +1124,42 @@ textarea:focus {
   margin: 0;
 }
 
+.invoice-archive-month {
+  display: grid;
+  grid-template-columns: 1fr auto;
+}
+
+.invoice-card-groups {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.invoice-card-group {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+}
+
+.invoice-card-group.is-empty { background: #fafcfb; }
+.invoice-card-group-heading,
+.invoice-file-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.invoice-card-group-heading span,
+.invoice-card-group p { color: var(--muted); font-size: 12px; }
+.invoice-card-group ul { padding-left: 18px; margin: 9px 0 0; }
+.invoice-card-group li { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: 13px; }
+.invoice-file-list { display: grid; gap: 6px; margin: 8px 0; }
+.invoice-file-list > div { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.invoice-file-input.is-dragging { border-color: var(--accent); background: #eaf8f3; }
+
 .invoice-archive-month h3 {
   color: var(--ink);
   font-size: 17px;
