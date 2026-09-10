@@ -2103,7 +2103,10 @@ function renderInvoiceArchive(invoices) {
           const cardName = formatCardName(cardId);
           return `<section class="invoice-card-group ${cardInvoices.length ? "" : "is-empty"}">
             <div class="invoice-card-group-heading">
-              <div><strong>${escapeHtml(cardName)}</strong><span>${cardInvoices.length} invoice${cardInvoices.length === 1 ? "" : "s"}</span></div>
+              <div class="invoice-card-title">
+                <strong>${escapeHtml(cardName)}</strong>
+                <span class="invoice-count">${cardInvoices.length} invoice${cardInvoices.length === 1 ? "" : "s"}</span>
+              </div>
               <button class="secondary compact" data-download-invoice-card="${key}:${cardId}" type="button" ${cardInvoices.length ? "" : "disabled"}>Download all</button>
             </div>
             ${cardInvoices.length ? `<ul>${cardInvoices.map((invoice) => `<li><span>${escapeHtml(invoice.filename)}</span><button class="invoice-text-action" data-download-invoice-file="${invoice.id}" data-invoice-name="${escapeHtml(invoice.filename)}" type="button">Download</button></li>`).join("")}</ul>` : `<p>No invoices this month.</p>`}

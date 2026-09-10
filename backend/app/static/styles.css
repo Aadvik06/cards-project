@@ -1138,9 +1138,9 @@ textarea:focus {
 }
 
 .invoice-card-group {
-  padding: 12px;
+  padding: 13px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 10px;
   background: #fff;
 }
 
@@ -1152,10 +1152,46 @@ textarea:focus {
   gap: 8px;
   align-items: center;
 }
-.invoice-card-group-heading span,
+.invoice-card-group-heading {
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(22, 58, 102, .1);
+}
+.invoice-card-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.invoice-card-title strong { white-space: nowrap; }
+.invoice-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--soft-blue);
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.invoice-card-group.is-empty .invoice-count {
+  background: #eef2f1;
+  color: var(--muted);
+}
 .invoice-card-group p { color: var(--muted); font-size: 12px; }
-.invoice-card-group ul { padding-left: 18px; margin: 9px 0 0; }
-.invoice-card-group li { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: 13px; }
+.invoice-card-group ul { list-style: none; padding: 0; margin: 9px 0 0; }
+.invoice-card-group li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(22, 58, 102, .1);
+  font-size: 13px;
+}
+.invoice-card-group li:last-child { border-bottom: 0; padding-bottom: 0; }
+.invoice-card-group li > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .invoice-file-list { display: grid; gap: 6px; margin: 8px 0; }
 .invoice-file-list > div { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
 .invoice-file-input.is-dragging { border-color: var(--accent); background: #eaf8f3; }
@@ -2175,8 +2211,21 @@ select:disabled {
   }
 
   .invoice-archive-month {
+    grid-template-columns: 1fr;
     align-items: stretch;
+  }
+
+  .invoice-card-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .invoice-card-group-heading {
+    align-items: flex-start;
     flex-direction: column;
+  }
+
+  .invoice-card-group-heading .secondary {
+    width: 100%;
   }
 
   .transaction-row .transaction-overview,
