@@ -26,7 +26,9 @@ from app.schemas.recommendation import (
 
 
 router = APIRouter()
-MAX_INVOICE_SIZE_BYTES = 10 * 1024 * 1024
+# Vercel Functions reject request bodies above 4.5 MB. Leave headroom for the
+# multipart form wrapper so every invoice accepted by the page reaches FastAPI.
+MAX_INVOICE_SIZE_BYTES = 4 * 1024 * 1024
 INVOICE_ARCHIVE_ALLOCATION_BYTES = 400 * 1024 * 1024
 ALLOWED_INVOICE_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
 EDITABLE_TRANSACTION_DETAIL_FIELDS = {
@@ -167,7 +169,7 @@ async def upload_invoice(transaction_id: str, invoice: UploadFile = File(...)) -
     if not content:
         raise HTTPException(status_code=400, detail="The invoice file is empty.")
     if len(content) > MAX_INVOICE_SIZE_BYTES:
-        raise HTTPException(status_code=400, detail="Invoice files must be 10 MB or smaller.")
+        raise HTTPException(status_code=400, detail="Invoice files must be 4 MB or smaller.")
     try:
         return get_monthly_log_service().ledger.save_invoice(
             transaction_id=transaction_id,

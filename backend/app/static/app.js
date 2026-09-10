@@ -97,6 +97,8 @@ const auth = {
   challengeId: null,
 };
 
+const MAX_INVOICE_UPLOAD_BYTES = 4 * 1024 * 1024;
+
 const cardNames = {
   amex: "American Express",
   hdfc_infinia: "HDFC Infinia",
@@ -2031,8 +2033,10 @@ async function loadTransactions() {
       fetch("/transactions", { headers }),
       fetch("/invoices/storage-summary", { headers }),
     ]);
-    if (!summaryResponse.ok || !transactionsResponse.ok || !storageResponse.ok) {
-      throw new Error("Could not load transaction history.");
+    const failedResponse = [summaryResponse, transactionsResponse, storageResponse].find((response) => !response.ok);
+    if (failedResponse) {
+      const data = await readResponseBody(failedResponse);
+      throw new Error(data.detail || "Could not load transaction history.");
     }
     const summary = await summaryResponse.json();
     const transactions = await transactionsResponse.json();
@@ -2043,7 +2047,7 @@ async function loadTransactions() {
     setStatus("Ready");
   } catch (error) {
     setStatus("Ready");
-    showToast("Could not load past transactions.", true);
+    showToast(error.message || "Could not load past transactions.", true);
   }
 }
 
@@ -2060,7 +2064,10 @@ async function loadInvoices() {
   try {
     setStatus("Loading invoices");
     const response = await fetch("/invoices", { headers: await authHeaders() });
-    if (!response.ok) throw new Error("Could not load invoices.");
+    if (!response.ok) {
+      const data = await readResponseBody(response);
+      throw new Error(data.detail || "Could not load invoices.");
+    }
     renderInvoiceArchive(await response.json());
     setStatus("Ready");
   } catch (error) {
@@ -2615,7 +2622,7 @@ function invoiceUploadControl(transactionId, invoice) {
         <span class="invoice-file-icon" aria-hidden="true">↑</span>
         <span class="invoice-file-copy">
           <strong>${invoice ? "Choose a replacement" : "Choose invoice"}</strong>
-          <small data-invoice-file-label="${transactionId}">PDF, JPG, PNG or WEBP · up to 10 MB</small>
+          <small data-invoice-file-label="${transactionId}">PDF, JPG, PNG or WEBP · up to 4 MB</small>
         </span>
       </label>
       <button class="primary compact" data-save-invoice="${transactionId}" type="button">${invoice ? "Replace invoice" : "Upload invoice"}</button>
@@ -2646,7 +2653,7 @@ function setupInvoiceActions() {
     input.addEventListener("change", () => {
       const label = document.querySelector(`[data-invoice-file-label="${input.dataset.invoiceFile}"]`);
       const file = input.files?.[0];
-      if (label) label.textContent = file ? `${file.name} · ${formatFileSize(file.size)}` : "PDF, JPG, PNG or WEBP · up to 10 MB";
+      if (label) label.textContent = file ? `${file.name} · ${formatFileSize(file.size)}` : "PDF, JPG, PNG or WEBP · up to 4 MB";
     });
   });
   $$("[data-save-invoice]").forEach((button) => {
@@ -2659,8 +2666,8 @@ function setupInvoiceActions() {
         showToast("Choose an invoice file first.", true);
         return;
       }
-      if (file.size > 10 * 1024 * 1024) {
-        showToast("Invoice files must be 10 MB or smaller.", true);
+      if (file.size > MAX_INVOICE_UPLOAD_BYTES) {
+        showToast("Invoice files must be 4 MB or smaller.", true);
         return;
       }
       try {
