@@ -231,7 +231,7 @@ class AuditLedger:
                 "SELECT * FROM transactions ORDER BY paid_at ASC"
             ).fetchall()
             invoices = connection.execute(
-                "SELECT transaction_id, filename, content_type, uploaded_at, LENGTH(file_data) AS file_size_bytes FROM transaction_invoices"
+                "SELECT transaction_id, filename, content_type, uploaded_at, storage_path, storage_size_bytes, LENGTH(file_data) AS file_size_bytes FROM transaction_invoices"
             ).fetchall()
         invoice_by_transaction = {row["transaction_id"]: self._dict(row) for row in invoices}
         transactions = [self._dict(row) for row in rows]
@@ -245,7 +245,7 @@ class AuditLedger:
         """Return invoice usage within the deliberately reserved archive allocation."""
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT COALESCE(SUM(LENGTH(file_data)), 0) AS used_bytes, COUNT(*) AS invoice_count FROM transaction_invoices"
+            "SELECT COALESCE(SUM(COALESCE(storage_size_bytes, LENGTH(file_data))), 0) AS used_bytes, COUNT(*) AS invoice_count FROM transaction_invoices"
             ).fetchone()
         used_bytes = int(row["used_bytes"] or 0)
         return {
@@ -335,6 +335,24 @@ class AuditLedger:
             ).fetchone()
         return self._dict(row) if row is not None else None
 
+    def save_cloud_invoice(self, *, transaction_id: str, filename: str, content_type: str, storage_path: str, file_size_bytes: int) -> dict[str, Any]:
+        with self._connect() as connection:
+            exists = connection.execute(self._sql("SELECT id FROM transactions WHERE id = ?"), (transaction_id,)).fetchone()
+            if exists is None:
+                raise ValueError("Transaction not found.")
+            uploaded_at = datetime.now().isoformat()
+            placeholders = "%s, %s, %s, %s, %s, %s, %s" if self.database_url else "?, ?, ?, ?, ?, ?, ?"
+            update = "EXCLUDED" if self.database_url else "excluded"
+            connection.execute(
+                f"""INSERT INTO transaction_invoices (transaction_id, filename, content_type, file_data, uploaded_at, storage_path, storage_size_bytes)
+                VALUES ({placeholders})
+                ON CONFLICT(transaction_id) DO UPDATE SET filename = {update}.filename, content_type = {update}.content_type,
+                file_data = {update}.file_data, uploaded_at = {update}.uploaded_at, storage_path = {update}.storage_path,
+                storage_size_bytes = {update}.storage_size_bytes""",
+                (transaction_id, filename, content_type, b"", uploaded_at, storage_path, file_size_bytes),
+            )
+        return {"transaction_id": transaction_id, "filename": filename, "content_type": content_type, "uploaded_at": uploaded_at, "invoice_status": "uploaded", "storage_path": storage_path}
+
     def read_invoices(self) -> list[dict[str, Any]]:
         """Return audit-friendly invoice metadata without loading file contents."""
         with self._connect() as connection:
@@ -342,7 +360,7 @@ class AuditLedger:
                 """
                 SELECT transaction_invoices.transaction_id, transaction_invoices.filename,
                        transaction_invoices.content_type, transaction_invoices.uploaded_at,
-                       LENGTH(transaction_invoices.file_data) AS file_size_bytes,
+                       COALESCE(transaction_invoices.storage_size_bytes, LENGTH(transaction_invoices.file_data)) AS file_size_bytes,
                        transactions.paid_at
                 FROM transaction_invoices
                 INNER JOIN transactions ON transactions.id = transaction_invoices.transaction_id
@@ -462,6 +480,8 @@ class AuditLedger:
             self._ensure_column(connection, "transactions", "tax_benefit", "TEXT NOT NULL DEFAULT '0'")
             self._ensure_column(connection, "transactions", "deductible_expense", "TEXT NOT NULL DEFAULT '0'")
             self._ensure_column(connection, "transactions", "foreign_transaction", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(connection, "transaction_invoices", "storage_path", "TEXT")
+            self._ensure_column(connection, "transaction_invoices", "storage_size_bytes", "INTEGER")
             if self.database_url:
                 self._enable_postgres_row_level_security(connection)
 

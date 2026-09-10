@@ -57,6 +57,16 @@ class RecommendationCreateRequest(BaseModel):
     quotes: list[QuoteRequest] = Field(min_length=1)
 
 
+class InvoiceUploadRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=200)
+    content_type: str
+    file_size_bytes: int = Field(gt=0, le=50 * 1024 * 1024)
+
+
+class InvoiceUploadCompleteRequest(InvoiceUploadRequest):
+    storage_path: str = Field(min_length=1, max_length=400)
+
+
 class RecommendationOptionResponse(BaseModel):
     id: str
     rank: int

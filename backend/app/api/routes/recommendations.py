@@ -1,7 +1,9 @@
 import os
 import secrets
+from uuid import uuid4
 
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
+from fastapi.responses import RedirectResponse
 
 from app.api.dependencies import (
     get_monthly_log_service,
@@ -11,12 +13,15 @@ from app.api.dependencies import (
 )
 from app.core.errors import OptimizerError
 from app.data.repositories.audit_ledger import InvoiceStorageLimitError
+from app.services.supabase_invoice_storage import InvoiceStorageError, SupabaseInvoiceStorage
 from app.schemas.recommendation import (
     DecisionRequest,
     DecisionResponse,
     DraftResponse,
     DraftSaveRequest,
     FinalizeTransactionRequest,
+    InvoiceUploadCompleteRequest,
+    InvoiceUploadRequest,
     RecommendationCreateRequest,
     RecommendationResponse,
     TransactionDetailsUpdateRequest,
@@ -29,6 +34,7 @@ router = APIRouter()
 # Vercel Functions reject request bodies above 4.5 MB. Leave headroom for the
 # multipart form wrapper so every invoice accepted by the page reaches FastAPI.
 MAX_INVOICE_SIZE_BYTES = 4 * 1024 * 1024
+MAX_CLOUD_INVOICE_SIZE_BYTES = 50 * 1024 * 1024
 INVOICE_ARCHIVE_ALLOCATION_BYTES = 400 * 1024 * 1024
 ALLOWED_INVOICE_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
 EDITABLE_TRANSACTION_DETAIL_FIELDS = {
@@ -184,11 +190,54 @@ async def upload_invoice(transaction_id: str, invoice: UploadFile = File(...)) -
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.post("/transactions/{transaction_id}/invoice/upload-url")
+def create_invoice_upload_url(transaction_id: str, payload: InvoiceUploadRequest) -> dict:
+    if payload.content_type not in ALLOWED_INVOICE_TYPES:
+        raise HTTPException(status_code=400, detail="Upload a PDF, JPG, PNG, or WEBP invoice.")
+    if payload.file_size_bytes > MAX_CLOUD_INVOICE_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="Invoice files must be 50 MB or smaller.")
+    transaction = next((item for item in get_monthly_log_service().ledger.read_transactions() if item["id"] == transaction_id), None)
+    if transaction is None:
+        raise HTTPException(status_code=404, detail="Transaction not found.")
+    extension = os.path.splitext(payload.filename)[1].lower()
+    storage_path = f"invoices/{transaction_id}/{uuid4()}{extension}"
+    try:
+        token = SupabaseInvoiceStorage().create_upload_token(storage_path)
+    except InvoiceStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"bucket": "travel-invoices", "storage_path": storage_path, "token": token}
+
+
+@router.post("/transactions/{transaction_id}/invoice/complete")
+def complete_invoice_upload(transaction_id: str, payload: InvoiceUploadCompleteRequest) -> dict:
+    expected_prefix = f"invoices/{transaction_id}/"
+    if not payload.storage_path.startswith(expected_prefix):
+        raise HTTPException(status_code=400, detail="Invalid invoice upload path.")
+    if payload.content_type not in ALLOWED_INVOICE_TYPES:
+        raise HTTPException(status_code=400, detail="Upload a PDF, JPG, PNG, or WEBP invoice.")
+    try:
+        return get_monthly_log_service().ledger.save_cloud_invoice(
+            transaction_id=transaction_id,
+            filename=payload.filename,
+            content_type=payload.content_type,
+            storage_path=payload.storage_path,
+            file_size_bytes=payload.file_size_bytes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/transactions/{transaction_id}/invoice")
 def get_invoice(transaction_id: str) -> Response:
     invoice = get_monthly_log_service().ledger.get_invoice(transaction_id)
     if invoice is None:
         raise HTTPException(status_code=404, detail="No invoice has been uploaded for this transaction.")
+    if invoice.get("storage_path"):
+        try:
+            url = SupabaseInvoiceStorage().signed_download_url(invoice["storage_path"], invoice["filename"])
+        except InvoiceStorageError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return RedirectResponse(url=url, status_code=307)
     filename = invoice["filename"].replace('"', "")
     return Response(
         content=invoice["file_data"],
@@ -199,6 +248,12 @@ def get_invoice(transaction_id: str) -> Response:
 
 @router.delete("/transactions/{transaction_id}/invoice")
 def delete_invoice(transaction_id: str) -> dict:
+    invoice = get_monthly_log_service().ledger.get_invoice(transaction_id)
+    if invoice and invoice.get("storage_path"):
+        try:
+            SupabaseInvoiceStorage().delete(invoice["storage_path"])
+        except InvoiceStorageError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
     deleted = get_monthly_log_service().ledger.delete_invoice(transaction_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="No invoice has been uploaded for this transaction.")

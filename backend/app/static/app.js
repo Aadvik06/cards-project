@@ -97,7 +97,7 @@ const auth = {
   challengeId: null,
 };
 
-const MAX_INVOICE_UPLOAD_BYTES = 4 * 1024 * 1024;
+const MAX_INVOICE_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 const cardNames = {
   amex: "American Express",
@@ -2622,7 +2622,7 @@ function invoiceUploadControl(transactionId, invoice) {
         <span class="invoice-file-icon" aria-hidden="true">↑</span>
         <span class="invoice-file-copy">
           <strong>${invoice ? "Choose a replacement" : "Choose invoice"}</strong>
-          <small data-invoice-file-label="${transactionId}">PDF, JPG, PNG or WEBP · up to 4 MB</small>
+          <small data-invoice-file-label="${transactionId}">PDF, JPG, PNG or WEBP · up to 50 MB</small>
         </span>
       </label>
       <button class="primary compact" data-save-invoice="${transactionId}" type="button">${invoice ? "Replace invoice" : "Upload invoice"}</button>
@@ -2653,7 +2653,7 @@ function setupInvoiceActions() {
     input.addEventListener("change", () => {
       const label = document.querySelector(`[data-invoice-file-label="${input.dataset.invoiceFile}"]`);
       const file = input.files?.[0];
-      if (label) label.textContent = file ? `${file.name} · ${formatFileSize(file.size)}` : "PDF, JPG, PNG or WEBP · up to 4 MB";
+      if (label) label.textContent = file ? `${file.name} · ${formatFileSize(file.size)}` : "PDF, JPG, PNG or WEBP · up to 50 MB";
     });
   });
   $$("[data-save-invoice]").forEach((button) => {
@@ -2667,20 +2667,25 @@ function setupInvoiceActions() {
         return;
       }
       if (file.size > MAX_INVOICE_UPLOAD_BYTES) {
-        showToast("Invoice files must be 4 MB or smaller.", true);
+        showToast("Invoice files must be 50 MB or smaller.", true);
         return;
       }
       try {
         setStatus("Uploading invoice");
-        const formData = new FormData();
-        formData.append("invoice", file);
-        const response = await fetch(`/transactions/${transactionId}/invoice`, {
-          method: "POST",
-          headers: await authHeaders(),
-          body: formData,
+        const uploadRequest = {
+          filename: file.name,
+          content_type: file.type,
+          file_size_bytes: file.size,
+        };
+        const prepared = await postJson(`/transactions/${transactionId}/invoice/upload-url`, uploadRequest);
+        const { error: uploadError } = await auth.client.storage
+          .from(prepared.bucket)
+          .uploadToSignedUrl(prepared.storage_path, prepared.token, file, { contentType: file.type });
+        if (uploadError) throw new Error(uploadError.message || "Could not upload the invoice.");
+        const data = await postJson(`/transactions/${transactionId}/invoice/complete`, {
+          ...uploadRequest,
+          storage_path: prepared.storage_path,
         });
-        const data = await readResponseBody(response);
-        if (!response.ok) throw new Error(data.detail || "Could not upload the invoice.");
         setStatus("Saved");
         showToast("Invoice uploaded.");
         if ($("#transactionsView").classList.contains("is-hidden")) {
