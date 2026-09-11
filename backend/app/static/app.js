@@ -853,7 +853,19 @@ function renderVendorRows() {
         </div>
       </section>
       <section class="vendor-booking-section">
-        <div class="vendor-section-heading"><strong>${state.travelType === "flight" ? "Flight details" : "Hotel details"}</strong><span>Specific to this ${state.travelType === "flight" ? "itinerary" : "stay"}</span></div>
+        <div class="vendor-section-heading vendor-details-heading">
+          <div><strong>${state.travelType === "flight" ? "Flight details" : "Hotel details"}</strong><span>Specific to this ${state.travelType === "flight" ? "itinerary" : "stay"}</span></div>
+          <div class="copy-details-control">
+            <label>
+              Copy details from
+              <select data-copy-details-from="${vendor.id}">
+                <option value="">Choose a vendor</option>
+                ${vendorsByType[state.travelType].filter((source) => source.id !== vendor.id).map((source) => `<option value="${source.id}">${escapeHtml(source.name)}</option>`).join("")}
+              </select>
+            </label>
+            <button class="secondary compact" data-copy-details-to="${vendor.id}" type="button" disabled>Copy</button>
+          </div>
+        </div>
         <div class="vendor-detail-fields ${state.travelType === "flight" ? "flight-detail-fields" : "hotel-detail-fields"}">${vendorDetailFields(vendor)}</div>
       </section>
     `;
@@ -880,6 +892,34 @@ function renderVendorRows() {
   setupLayoverControls();
   setupTripTypeControls();
   setupTravelAgentPaymentControls();
+  setupVendorDetailCopyControls();
+}
+
+function setupVendorDetailCopyControls() {
+  $$('[data-copy-details-from]').forEach((select) => {
+    const button = document.querySelector(`[data-copy-details-to="${select.dataset.copyDetailsFrom}"]`);
+    const update = () => { button.disabled = !select.value; };
+    select.addEventListener("change", update);
+    button?.addEventListener("click", () => copyVendorDetails(select.value, select.dataset.copyDetailsFrom));
+    update();
+  });
+}
+
+function copyVendorDetails(sourceVendorId, targetVendorId) {
+  if (!sourceVendorId || !targetVendorId || sourceVendorId === targetVendorId) return;
+  const sourceSection = document.querySelector(`[data-copy-details-to="${sourceVendorId}"]`)?.closest(".vendor-booking-section");
+  const targetSection = document.querySelector(`[data-copy-details-to="${targetVendorId}"]`)?.closest(".vendor-booking-section");
+  if (!sourceSection || !targetSection) return;
+
+  sourceSection.querySelectorAll("input[id], select[id]").forEach((sourceField) => {
+    const targetId = sourceField.id.replace(`${sourceVendorId}_`, `${targetVendorId}_`);
+    const targetField = document.getElementById(targetId);
+    if (targetField) targetField.value = sourceField.value;
+  });
+  refreshSplitPickers();
+  refreshLayoverControls();
+  updateTripTypeControls();
+  showToast("Travel details copied. You can still adjust this vendor if needed.");
 }
 
 function setupTravelAgentPaymentControls() {
@@ -2716,7 +2756,7 @@ function setupInvoiceActions() {
           const { error: uploadError } = await auth.client.storage.from(prepared.bucket)
             .uploadToSignedUrl(prepared.storage_path, prepared.token, file, { contentType: file.type });
           if (uploadError) throw new Error(uploadError.message || "Could not upload the invoice.");
-          await postJson(`/transactions/${transactionId}/invoice/complete`, { ...uploadRequest, storage_path: prepared.storage_path });
+          await postJson(`/transactions/${transactionId}/invoice/complete`, { ...uploadRequest, filename: prepared.filename, storage_path: prepared.storage_path });
         }
         setStatus("Saved");
         showToast(`${files.length} invoice file${files.length === 1 ? "" : "s"} uploaded.`);

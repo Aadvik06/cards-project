@@ -1,6 +1,5 @@
 import os
 import secrets
-from uuid import uuid4
 
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse
@@ -196,16 +195,17 @@ def create_invoice_upload_url(transaction_id: str, payload: InvoiceUploadRequest
         raise HTTPException(status_code=400, detail="Upload a PDF, JPG, PNG, or WEBP invoice.")
     if payload.file_size_bytes > MAX_CLOUD_INVOICE_SIZE_BYTES:
         raise HTTPException(status_code=400, detail="Invoice files must be 50 MB or smaller.")
-    transaction = next((item for item in get_monthly_log_service().ledger.read_transactions() if item["id"] == transaction_id), None)
-    if transaction is None:
-        raise HTTPException(status_code=404, detail="Transaction not found.")
-    extension = os.path.splitext(payload.filename)[1].lower()
-    storage_path = f"invoices/{transaction_id}/{uuid4()}{extension}"
+    ledger = get_monthly_log_service().ledger
+    try:
+        filename = ledger.next_invoice_filename(transaction_id, payload.filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    storage_path = f"invoices/{transaction_id}/{filename}"
     try:
         token = SupabaseInvoiceStorage().create_upload_token(storage_path)
     except InvoiceStorageError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return {"bucket": "travel-invoices", "storage_path": storage_path, "token": token}
+    return {"bucket": "travel-invoices", "storage_path": storage_path, "filename": filename, "token": token}
 
 
 @router.post("/transactions/{transaction_id}/invoice/complete")
@@ -215,8 +215,12 @@ def complete_invoice_upload(transaction_id: str, payload: InvoiceUploadCompleteR
         raise HTTPException(status_code=400, detail="Invalid invoice upload path.")
     if payload.content_type not in ALLOWED_INVOICE_TYPES:
         raise HTTPException(status_code=400, detail="Upload a PDF, JPG, PNG, or WEBP invoice.")
+    ledger = get_monthly_log_service().ledger
     try:
-        return get_monthly_log_service().ledger.save_cloud_invoice(
+        expected_filename = ledger.next_invoice_filename(transaction_id, payload.filename)
+        if os.path.basename(payload.storage_path) != expected_filename:
+            raise HTTPException(status_code=400, detail="Invoice upload name no longer matches this transaction.")
+        return ledger.save_cloud_invoice(
             transaction_id=transaction_id,
             filename=payload.filename,
             content_type=payload.content_type,

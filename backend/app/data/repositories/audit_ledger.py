@@ -276,6 +276,7 @@ class AuditLedger:
         content: bytes,
         allocation_bytes: int | None = None,
     ) -> dict[str, Any]:
+        filename = self.next_invoice_filename(transaction_id, filename)
         with self._connect() as connection:
             exists = connection.execute(
                 self._sql("SELECT id FROM transactions WHERE id = ?"),
@@ -343,6 +344,7 @@ class AuditLedger:
         return self._dict(row) if row is not None else None
 
     def save_cloud_invoice(self, *, transaction_id: str, filename: str, content_type: str, storage_path: str, file_size_bytes: int) -> dict[str, Any]:
+        filename = self.next_invoice_filename(transaction_id, filename)
         with self._connect() as connection:
             exists = connection.execute(self._sql("SELECT id FROM transactions WHERE id = ?"), (transaction_id,)).fetchone()
             if exists is None:
@@ -355,6 +357,24 @@ class AuditLedger:
                 (invoice_id, transaction_id, filename, content_type, storage_path, file_size_bytes, uploaded_at),
             )
         return {"id": invoice_id, "transaction_id": transaction_id, "filename": filename, "content_type": content_type, "uploaded_at": uploaded_at, "invoice_status": "uploaded", "storage_path": storage_path, "storage_size_bytes": file_size_bytes}
+
+    def next_invoice_filename(self, transaction_id: str, original_filename: str) -> str:
+        """Build a consistent, audit-friendly name without loading invoice data."""
+        with self._connect() as connection:
+            transaction = connection.execute(
+                self._sql("SELECT * FROM transactions WHERE id = ?"), (transaction_id,)
+            ).fetchone()
+            if transaction is None:
+                raise ValueError("Transaction not found.")
+            cloud_count = connection.execute(
+                self._sql("SELECT COUNT(*) AS count FROM transaction_invoice_files WHERE transaction_id = ?"),
+                (transaction_id,),
+            ).fetchone()["count"]
+            legacy_count = connection.execute(
+                self._sql("SELECT COUNT(*) AS count FROM transaction_invoices WHERE transaction_id = ?"),
+                (transaction_id,),
+            ).fetchone()["count"]
+        return self._invoice_filename(self._dict(transaction), int(cloud_count) + int(legacy_count) + 1, original_filename)
 
     def read_invoices(self) -> list[dict[str, Any]]:
         """Return audit-friendly invoice metadata without loading file contents."""
@@ -517,8 +537,106 @@ class AuditLedger:
             self._ensure_column(connection, "transactions", "foreign_transaction", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(connection, "transaction_invoices", "storage_path", "TEXT")
             self._ensure_column(connection, "transaction_invoices", "storage_size_bytes", "INTEGER")
+            self._rename_existing_invoice_records(connection)
             if self.database_url:
                 self._enable_postgres_row_level_security(connection)
+
+    def _rename_existing_invoice_records(self, connection: Any) -> None:
+        """Give prior invoices the same download names as newly uploaded files.
+
+        Storage object paths intentionally remain opaque; the database filename is
+        what users see and what is applied to secure downloads and ZIP exports.
+        """
+        transactions = connection.execute(
+            "SELECT id, travel_type, card_id, vendor_id, paid_at, details_json FROM transactions"
+        ).fetchall()
+        for transaction_row in transactions:
+            transaction = self._dict(transaction_row)
+            transaction_id = transaction["id"]
+            cloud_rows = connection.execute(
+                self._sql("SELECT id, filename, uploaded_at FROM transaction_invoice_files WHERE transaction_id = ? ORDER BY uploaded_at ASC"),
+                (transaction_id,),
+            ).fetchall()
+            legacy_rows = connection.execute(
+                self._sql("SELECT filename, uploaded_at FROM transaction_invoices WHERE transaction_id = ? ORDER BY uploaded_at ASC"),
+                (transaction_id,),
+            ).fetchall()
+            files = [
+                ("cloud", self._dict(row)) for row in cloud_rows
+            ] + [("legacy", self._dict(row)) for row in legacy_rows]
+            files.sort(key=lambda item: item[1]["uploaded_at"])
+            for sequence, (kind, invoice) in enumerate(files, start=1):
+                filename = self._invoice_filename(transaction, sequence, invoice["filename"])
+                if invoice["filename"] == filename:
+                    continue
+                if kind == "cloud":
+                    connection.execute(
+                        self._sql("UPDATE transaction_invoice_files SET filename = ? WHERE id = ?"),
+                        (filename, invoice["id"]),
+                    )
+                else:
+                    connection.execute(
+                        self._sql("UPDATE transaction_invoices SET filename = ? WHERE transaction_id = ?"),
+                        (filename, transaction_id),
+                    )
+
+    @staticmethod
+    def _invoice_filename(transaction: dict[str, Any], sequence: int, original_filename: str) -> str:
+        details = transaction.get("details") or {}
+        extension = Path(original_filename or "").suffix.lower()
+        if extension not in {".pdf", ".jpg", ".jpeg", ".png", ".webp"}:
+            extension = ".pdf"
+        travel_type = transaction.get("travel_type")
+        if travel_type == "flight":
+            subject = "-".join(value for value in (details.get("from"), details.get("to")) if value) or "Flight"
+            travel_date = details.get("flight_date") or transaction.get("paid_at")
+        elif travel_type == "hotel":
+            subject = details.get("hotel_name") or details.get("city") or "Hotel"
+            travel_date = details.get("check_in") or transaction.get("paid_at")
+        else:
+            subject = details.get("vendor_name") or "Voucher"
+            travel_date = details.get("purchase_date") or transaction.get("paid_at")
+        date_text = str(travel_date or "").split("T", 1)[0] or "Undated"
+        card_name = {
+            "amex": "American-Express",
+            "hdfc_infinia": "HDFC-Infinia",
+            "icici_times_black": "ICICI-Times-Black",
+            "bank_transfer": "Bank-Transfer",
+        }.get(transaction.get("card_id"), transaction.get("card_id") or "Payment")
+        vendor_name = details.get("travel_agent_name") or AuditLedger._vendor_filename_name(transaction.get("vendor_id") or "Vendor")
+        traveller = details.get("booking_for") or ""
+        parts = [date_text, card_name, vendor_name]
+        if traveller:
+            parts.append(traveller)
+        parts.extend([subject, f"Invoice-T{sequence:02d}"])
+        safe_name = "_".join(AuditLedger._safe_filename_part(part) for part in parts if part)
+        return f"{safe_name[: max(1, 200 - len(extension))]}{extension}"
+
+    @staticmethod
+    def _vendor_filename_name(vendor_id: str) -> str:
+        names = {
+            "amex_mmt_flight_voucher": "MakeMyTrip",
+            "amex_cleartrip_generic_voucher": "Cleartrip",
+            "hdfc_smartbuy_flight": "HDFC-SmartBuy",
+            "icici_ishop_flight": "ICICI-iShop",
+            "travel_agent_flight": "Travel-Agent",
+            "amex_goibibo_hotel_voucher": "Goibibo",
+            "amex_easemytrip_hotel_voucher": "EaseMyTrip",
+            "amex_mmt_hotel_voucher": "MakeMyTrip",
+            "amex_cleartrip_hotel_voucher": "Cleartrip",
+            "hdfc_smartbuy_hotel": "HDFC-SmartBuy",
+            "icici_ishop_hotel": "ICICI-iShop",
+            "amex_fine_hotels": "Amex-Fine-Hotels",
+            "travel_agent_hotel": "Travel-Agent",
+            "amex_other_voucher": "American-Express-Voucher",
+        }
+        return names.get(vendor_id, vendor_id.replace("_", "-"))
+
+    @staticmethod
+    def _safe_filename_part(value: Any) -> str:
+        clean = "".join(character if character.isalnum() else "-" for character in str(value).strip())
+        clean = "-".join(part for part in clean.split("-") if part)
+        return clean[:48] or "Unknown"
 
     @contextmanager
     def _connect(self) -> Iterator[Any]:
