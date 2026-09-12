@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -173,6 +173,7 @@ class FinalizeTransactionRequest(BaseModel):
 
 class VoucherLogRequest(BaseModel):
     employee_name: str | None = None
+    card_id: Literal["amex", "icici_times_black"] = "amex"
     vendor_name: str
     final_amount_paid: Decimal = Field(gt=0)
     paid_at: datetime | None = None

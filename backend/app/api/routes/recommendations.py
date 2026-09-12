@@ -117,6 +117,7 @@ def log_voucher_purchase(payload: VoucherLogRequest) -> TransactionResponse:
     try:
         transaction = get_transaction_service().log_voucher_purchase(
             employee_name=payload.employee_name,
+            card_id=payload.card_id,
             vendor_name=payload.vendor_name,
             final_amount_paid=payload.final_amount_paid,
             paid_at=payload.paid_at,

@@ -689,6 +689,12 @@ textarea:focus {
   grid-template-columns: minmax(220px, 1fr) 190px;
 }
 
+.voucher-log-fields {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(120px, .6fr);
+  gap: 10px;
+}
+
 .vendor-title {
   display: grid;
   gap: 5px;
@@ -2172,6 +2178,10 @@ select:disabled {
   }
 
   .vendor-row {
+    grid-template-columns: 1fr;
+  }
+
+  .voucher-log-fields {
     grid-template-columns: 1fr;
   }
 

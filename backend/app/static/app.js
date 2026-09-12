@@ -768,15 +768,25 @@ function renderVendorRows() {
     vendorList.innerHTML = `
       <div class="vendor-row simple">
         <div class="vendor-title">
-          <strong>American Express voucher purchase</strong>
-          <span>This only tracks Amex points and cap usage. It does not optimize vendors.</span>
+          <strong id="voucherCardTitle">American Express voucher purchase</strong>
+          <span id="voucherCardNote">Tracks Amex points and bonus-cap usage. It does not optimize vendors.</span>
         </div>
-        <label>
-          Amount
-          <input id="voucherAmount" inputmode="decimal" min="1" step="0.01" type="number" placeholder="0" />
-        </label>
+        <div class="voucher-log-fields">
+          <label>
+            Voucher card
+            <select id="voucherCard">
+              <option value="amex">American Express</option>
+              <option value="icici_times_black">ICICI Times Black · iShop</option>
+            </select>
+          </label>
+          <label>
+            Amount
+            <input id="voucherAmount" inputmode="decimal" min="1" step="0.01" type="number" placeholder="0" />
+          </label>
+        </div>
       </div>
     `;
+    setupVoucherCardControl();
     return;
   }
 
@@ -893,6 +903,22 @@ function renderVendorRows() {
   setupTripTypeControls();
   setupTravelAgentPaymentControls();
   setupVendorDetailCopyControls();
+}
+
+function setupVoucherCardControl() {
+  const card = $("#voucherCard");
+  const title = $("#voucherCardTitle");
+  const note = $("#voucherCardNote");
+  if (!card || !title || !note) return;
+  const refresh = () => {
+    const isIcici = card.value === "icici_times_black";
+    title.textContent = isIcici ? "ICICI iShop voucher purchase" : "American Express voucher purchase";
+    note.textContent = isIcici
+      ? "ICICI iShop vouchers earn 6× points. The extra 5× uses the shared 15,000 ICICI bonus-point cap."
+      : "Tracks Amex points and bonus-cap usage. It does not optimize vendors.";
+  };
+  card.addEventListener("change", refresh);
+  refresh();
 }
 
 function setupVendorDetailCopyControls() {
@@ -1262,13 +1288,17 @@ function setupQuoteForm() {
 
 function prepareVoucherReview() {
   const amount = Number($("#voucherAmount").value);
+  const voucherCardId = $("#voucherCard")?.value || "amex";
+  const isIciciVoucher = voucherCardId === "icici_times_black";
+  const cardName = isIciciVoucher ? "ICICI Times Black" : "American Express";
   if (!amount) {
     showToast("Enter the voucher amount.", true);
     return;
   }
   state.selectedOption = {
     id: "voucher",
-    card_name: "American Express",
+    card_id: voucherCardId,
+    card_name: cardName,
     vendor_name: $("#voucherVendor").value.trim() || "Other voucher",
     price_after_discount: String(amount),
     net_cost: String(amount),
@@ -1277,15 +1307,15 @@ function prepareVoucherReview() {
   $("#bestOption").innerHTML = `
     <article class="option-card best">
       <div class="option-top">
-        <img class="option-card-image" src="${cardImageFor("amex")}" alt="American Express card" />
+        <img class="option-card-image" src="${cardImageFor(voucherCardId)}" alt="${cardName} card" />
         <div>
           <span class="rank-badge">Track only</span>
-          <h3>American Express</h3>
+          <h3>${cardName}</h3>
           <p>${state.selectedOption.vendor_name}</p>
         </div>
         <button class="primary" id="continueVoucher" type="button">Continue</button>
       </div>
-      <p>This voucher will be logged for Amex point and cap tracking. No card optimization is needed.</p>
+      <p>${isIciciVoucher ? "This ICICI iShop voucher earns 6× points; the extra 5× is pooled into the shared 15,000 ICICI bonus-point cap." : "This voucher will be logged for Amex point and cap tracking. No card optimization is needed."}</p>
       <div class="metric-grid">
         <div class="metric feature"><span>Cash to pay</span><strong>${formatMoney(state.selectedOption.price_after_discount)}</strong></div>
       </div>
@@ -1839,6 +1869,7 @@ function setupFinalForm() {
       const transaction = state.travelType === "voucher"
         ? await postJson("/vouchers", {
             employee_name: details.employee_name || null,
+            card_id: state.selectedOption.card_id || "amex",
             vendor_name: details.vendor_name || "Other voucher",
             final_amount_paid: $("#finalAmount").value,
             paid_at: paidAt,
@@ -2603,7 +2634,7 @@ function transactionSummary(item) {
   }
   return {
     title: voucherVendorName(details, item.vendor_id, vendor),
-    metadata: `American Express voucher purchase · ${formatDate(item.paid_at)}`,
+    metadata: `${item.card_id === "icici_times_black" ? "ICICI iShop voucher purchase" : "American Express voucher purchase"} · ${formatDate(item.paid_at)}`,
     tags: [],
   };
 }
@@ -2615,6 +2646,7 @@ function vendorDisplayName(vendorId, travelType, details = {}) {
   const configuredVendor = vendorsByType[travelType]?.find((vendor) => vendor.id === vendorId)?.name;
   if (configuredVendor) return configuredVendor;
   if (vendorId === "amex_other_voucher") return "Other American Express Voucher";
+  if (vendorId === "icici_ishop_voucher") return "ICICI iShop Voucher";
   if (travelType === "voucher" && details.vendor_name) return details.vendor_name;
   return humanizeVendorId(vendorId) || "Booking platform";
 }

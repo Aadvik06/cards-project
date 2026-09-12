@@ -317,6 +317,22 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(Decimal("3000.0000"), transaction.total_points)
         self.assertEqual(1, len(self.ledger.read_transactions()))
 
+    def test_icici_ishop_voucher_uses_flight_six_x_rate_and_pooled_cap(self) -> None:
+        transaction = self.transactions.log_voucher_purchase(
+            employee_name="Ava Patel",
+            card_id="icici_times_black",
+            vendor_name="Amazon Voucher",
+            final_amount_paid=Decimal("10000"),
+            paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            description="ICICI iShop voucher purchase.",
+        )
+
+        self.assertEqual("icici_times_black", transaction.card_id)
+        self.assertEqual("icici_ishop_voucher", transaction.vendor_id)
+        self.assertEqual(Decimal("200.0000"), transaction.base_points)
+        self.assertEqual(Decimal("1000.0000"), transaction.bonus_points)
+        self.assertEqual(Decimal("1200.0000"), transaction.total_points)
+
     def test_transaction_can_be_deleted(self) -> None:
         transaction = self.transactions.log_voucher_purchase(
             employee_name="Ava Patel",

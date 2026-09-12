@@ -318,23 +318,28 @@ class TransactionService:
         self,
         *,
         employee_name: str | None,
+        card_id: str = "amex",
         vendor_name: str,
         final_amount_paid: Decimal,
         paid_at: datetime | None = None,
         description: str,
     ) -> TransactionRecord:
         paid_at = paid_at or datetime.now(UTC)
-        amex = next(card for card in self.recommendation_service.cards if card.id == "amex")
+        if card_id not in {"amex", "icici_times_black"}:
+            raise OptimizerError("Voucher purchases can only use American Express or ICICI Times Black.")
+        card = next(card for card in self.recommendation_service.cards if card.id == card_id)
         usage = self.recommendation_service.cap_usage.usage_for(paid_at.date()).get(
-            amex.id,
+            card.id,
             UsageSnapshot(),
         )
-        base_points = final_amount_paid * amex.base_rate
-        raw_bonus_points = (base_points * amex.hotel_multiplier) - base_points
-        awarded_bonus_points = min(raw_bonus_points, remaining_bonus_cap(amex, usage))
+        multiplier = card.flight_multiplier if card_id == "icici_times_black" else card.hotel_multiplier
+        base_points = final_amount_paid * card.base_rate
+        raw_bonus_points = (base_points * multiplier) - base_points
+        awarded_bonus_points = min(raw_bonus_points, remaining_bonus_cap(card, usage))
         total_points = base_points + awarded_bonus_points
-        points_value_rupees = total_points * amex.point_value_rupees
+        points_value_rupees = total_points * card.point_value_rupees
         voucher_id = f"voucher-{uuid4()}"
+        voucher_vendor_id = "icici_ishop_voucher" if card_id == "icici_times_black" else "amex_other_voucher"
 
         self.recommendation_service.ledger.save_recommendation(
             Recommendation(
@@ -343,7 +348,7 @@ class TransactionService:
                 travel_type=TravelType.VOUCHER,
                 quotes=[
                     QuoteInput(
-                        vendor_id="amex_other_voucher",
+                        vendor_id=voucher_vendor_id,
                         amount=final_amount_paid,
                         merchant_name=vendor_name,
                         description=description,
@@ -360,8 +365,8 @@ class TransactionService:
             recommendation_id=voucher_id,
             employee_id=employee_name,
             travel_type=TravelType.VOUCHER,
-            card_id="amex",
-            vendor_id="amex_other_voucher",
+            card_id=card_id,
+            vendor_id=voucher_vendor_id,
             discount_rate=Decimal("0"),
             final_amount_paid=money(final_amount_paid),
             base_points=points(base_points),
@@ -376,7 +381,11 @@ class TransactionService:
             foreign_transaction=False,
             net_cost=money(final_amount_paid - points_value_rupees),
             paid_at=paid_at,
-            details={"vendor_name": vendor_name, "description": description},
+            details={
+                "vendor_name": vendor_name,
+                "description": description,
+                "purchase_channel": "ICICI iShop" if card_id == "icici_times_black" else "American Express",
+            },
         )
         self.recommendation_service.ledger.append_transaction(transaction)
         return transaction
