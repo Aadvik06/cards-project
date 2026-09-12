@@ -629,6 +629,7 @@ class AuditLedger:
             "amex_fine_hotels": "Amex-Fine-Hotels",
             "travel_agent_hotel": "Travel-Agent",
             "amex_other_voucher": "American-Express-Voucher",
+            "hdfc_smartbuy_voucher": "HDFC-SmartBuy",
             "icici_ishop_voucher": "ICICI-iShop",
         }
         return names.get(vendor_id, vendor_id.replace("_", "-"))

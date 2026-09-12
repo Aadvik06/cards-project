@@ -333,6 +333,22 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(Decimal("1000.0000"), transaction.bonus_points)
         self.assertEqual(Decimal("1200.0000"), transaction.total_points)
 
+    def test_hdfc_smartbuy_voucher_uses_flight_five_x_rate_and_pooled_cap(self) -> None:
+        transaction = self.transactions.log_voucher_purchase(
+            employee_name="Ava Patel",
+            card_id="hdfc_infinia",
+            vendor_name="Amazon Voucher",
+            final_amount_paid=Decimal("10000"),
+            paid_at=datetime(2026, 8, 11, tzinfo=UTC),
+            description="HDFC SmartBuy voucher purchase.",
+        )
+
+        self.assertEqual("hdfc_infinia", transaction.card_id)
+        self.assertEqual("hdfc_smartbuy_voucher", transaction.vendor_id)
+        self.assertEqual(Decimal("333.0000"), transaction.base_points)
+        self.assertEqual(Decimal("1332.0000"), transaction.bonus_points)
+        self.assertEqual(Decimal("1665.0000"), transaction.total_points)
+
     def test_transaction_can_be_deleted(self) -> None:
         transaction = self.transactions.log_voucher_purchase(
             employee_name="Ava Patel",

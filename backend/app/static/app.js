@@ -113,6 +113,27 @@ const cardImages = {
   bank_transfer: "/static/assets/precisehub-logo.png",
 };
 
+const voucherCardInfo = {
+  amex: {
+    name: "American Express",
+    title: "American Express voucher purchase",
+    note: "Tracks Amex points and bonus-cap usage. It does not optimize vendors.",
+    reviewNote: "This voucher will be logged for Amex point and cap tracking. No card optimization is needed.",
+  },
+  hdfc_infinia: {
+    name: "HDFC Infinia",
+    title: "HDFC SmartBuy voucher purchase",
+    note: "HDFC SmartBuy vouchers earn 5× points. The extra 4× uses the shared 15,000 HDFC bonus-point cap.",
+    reviewNote: "This HDFC SmartBuy voucher earns 5× points; the extra 4× is pooled into the shared 15,000 HDFC bonus-point cap.",
+  },
+  icici_times_black: {
+    name: "ICICI Times Black",
+    title: "ICICI iShop voucher purchase",
+    note: "ICICI iShop vouchers earn 6× points. The extra 5× uses the shared 15,000 ICICI bonus-point cap.",
+    reviewNote: "This ICICI iShop voucher earns 6× points; the extra 5× is pooled into the shared 15,000 ICICI bonus-point cap.",
+  },
+};
+
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
@@ -776,6 +797,7 @@ function renderVendorRows() {
             Voucher card
             <select id="voucherCard">
               <option value="amex">American Express</option>
+              <option value="hdfc_infinia">HDFC Infinia · SmartBuy</option>
               <option value="icici_times_black">ICICI Times Black · iShop</option>
             </select>
           </label>
@@ -911,11 +933,9 @@ function setupVoucherCardControl() {
   const note = $("#voucherCardNote");
   if (!card || !title || !note) return;
   const refresh = () => {
-    const isIcici = card.value === "icici_times_black";
-    title.textContent = isIcici ? "ICICI iShop voucher purchase" : "American Express voucher purchase";
-    note.textContent = isIcici
-      ? "ICICI iShop vouchers earn 6× points. The extra 5× uses the shared 15,000 ICICI bonus-point cap."
-      : "Tracks Amex points and bonus-cap usage. It does not optimize vendors.";
+    const info = voucherCardInfo[card.value] || voucherCardInfo.amex;
+    title.textContent = info.title;
+    note.textContent = info.note;
   };
   card.addEventListener("change", refresh);
   refresh();
@@ -1289,8 +1309,8 @@ function setupQuoteForm() {
 function prepareVoucherReview() {
   const amount = Number($("#voucherAmount").value);
   const voucherCardId = $("#voucherCard")?.value || "amex";
-  const isIciciVoucher = voucherCardId === "icici_times_black";
-  const cardName = isIciciVoucher ? "ICICI Times Black" : "American Express";
+  const voucherInfo = voucherCardInfo[voucherCardId] || voucherCardInfo.amex;
+  const cardName = voucherInfo.name;
   if (!amount) {
     showToast("Enter the voucher amount.", true);
     return;
@@ -1315,7 +1335,7 @@ function prepareVoucherReview() {
         </div>
         <button class="primary" id="continueVoucher" type="button">Continue</button>
       </div>
-      <p>${isIciciVoucher ? "This ICICI iShop voucher earns 6× points; the extra 5× is pooled into the shared 15,000 ICICI bonus-point cap." : "This voucher will be logged for Amex point and cap tracking. No card optimization is needed."}</p>
+      <p>${voucherInfo.reviewNote}</p>
       <div class="metric-grid">
         <div class="metric feature"><span>Cash to pay</span><strong>${formatMoney(state.selectedOption.price_after_discount)}</strong></div>
       </div>
@@ -2634,7 +2654,7 @@ function transactionSummary(item) {
   }
   return {
     title: voucherVendorName(details, item.vendor_id, vendor),
-    metadata: `${item.card_id === "icici_times_black" ? "ICICI iShop voucher purchase" : "American Express voucher purchase"} · ${formatDate(item.paid_at)}`,
+    metadata: `${voucherCardInfo[item.card_id]?.title || "Voucher purchase"} · ${formatDate(item.paid_at)}`,
     tags: [],
   };
 }
@@ -2646,6 +2666,7 @@ function vendorDisplayName(vendorId, travelType, details = {}) {
   const configuredVendor = vendorsByType[travelType]?.find((vendor) => vendor.id === vendorId)?.name;
   if (configuredVendor) return configuredVendor;
   if (vendorId === "amex_other_voucher") return "Other American Express Voucher";
+  if (vendorId === "hdfc_smartbuy_voucher") return "HDFC SmartBuy Voucher";
   if (vendorId === "icici_ishop_voucher") return "ICICI iShop Voucher";
   if (travelType === "voucher" && details.vendor_name) return details.vendor_name;
   return humanizeVendorId(vendorId) || "Booking platform";

@@ -173,7 +173,7 @@ class FinalizeTransactionRequest(BaseModel):
 
 class VoucherLogRequest(BaseModel):
     employee_name: str | None = None
-    card_id: Literal["amex", "icici_times_black"] = "amex"
+    card_id: Literal["amex", "hdfc_infinia", "icici_times_black"] = "amex"
     vendor_name: str
     final_amount_paid: Decimal = Field(gt=0)
     paid_at: datetime | None = None

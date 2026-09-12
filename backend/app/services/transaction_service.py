@@ -325,21 +325,25 @@ class TransactionService:
         description: str,
     ) -> TransactionRecord:
         paid_at = paid_at or datetime.now(UTC)
-        if card_id not in {"amex", "icici_times_black"}:
-            raise OptimizerError("Voucher purchases can only use American Express or ICICI Times Black.")
+        if card_id not in {"amex", "hdfc_infinia", "icici_times_black"}:
+            raise OptimizerError("Voucher purchases can only use American Express, HDFC Infinia, or ICICI Times Black.")
         card = next(card for card in self.recommendation_service.cards if card.id == card_id)
         usage = self.recommendation_service.cap_usage.usage_for(paid_at.date()).get(
             card.id,
             UsageSnapshot(),
         )
-        multiplier = card.flight_multiplier if card_id == "icici_times_black" else card.hotel_multiplier
+        multiplier = card.flight_multiplier if card_id in {"hdfc_infinia", "icici_times_black"} else card.hotel_multiplier
         base_points = final_amount_paid * card.base_rate
         raw_bonus_points = (base_points * multiplier) - base_points
         awarded_bonus_points = min(raw_bonus_points, remaining_bonus_cap(card, usage))
         total_points = base_points + awarded_bonus_points
         points_value_rupees = total_points * card.point_value_rupees
         voucher_id = f"voucher-{uuid4()}"
-        voucher_vendor_id = "icici_ishop_voucher" if card_id == "icici_times_black" else "amex_other_voucher"
+        voucher_vendor_id = {
+            "amex": "amex_other_voucher",
+            "hdfc_infinia": "hdfc_smartbuy_voucher",
+            "icici_times_black": "icici_ishop_voucher",
+        }[card_id]
 
         self.recommendation_service.ledger.save_recommendation(
             Recommendation(
@@ -384,7 +388,11 @@ class TransactionService:
             details={
                 "vendor_name": vendor_name,
                 "description": description,
-                "purchase_channel": "ICICI iShop" if card_id == "icici_times_black" else "American Express",
+                "purchase_channel": {
+                    "amex": "American Express",
+                    "hdfc_infinia": "HDFC SmartBuy",
+                    "icici_times_black": "ICICI iShop",
+                }[card_id],
             },
         )
         self.recommendation_service.ledger.append_transaction(transaction)
