@@ -25,7 +25,10 @@ POSTGRES_AUDIT_TABLES = (
     "transactions",
     "drafts",
     "transaction_invoices",
+    "transaction_invoice_files",
+    "app_schema_versions",
 )
+SCHEMA_VERSION = 2
 
 
 class InvoiceStorageLimitError(ValueError):
@@ -520,6 +523,22 @@ class AuditLedger:
 
     def _initialize(self) -> None:
         with self._connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS app_schema_versions (
+                    scope TEXT PRIMARY KEY,
+                    version INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            version_row = connection.execute(
+                self._sql("SELECT version FROM app_schema_versions WHERE scope = ?"),
+                ("audit_ledger",),
+            ).fetchone()
+            if version_row is not None and int(version_row["version"]) >= SCHEMA_VERSION:
+                return
+
             self._run_schema(connection)
             self._ensure_column(connection, "transactions", "details_json", "TEXT NOT NULL DEFAULT '{}'")
             self._ensure_column(connection, "recommendation_options", "gst_credit", "TEXT NOT NULL DEFAULT '0'")
@@ -540,6 +559,18 @@ class AuditLedger:
             self._rename_existing_invoice_records(connection)
             if self.database_url:
                 self._enable_postgres_row_level_security(connection)
+            connection.execute(
+                self._sql(
+                    """
+                    INSERT INTO app_schema_versions (scope, version, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(scope) DO UPDATE SET
+                        version = EXCLUDED.version,
+                        updated_at = EXCLUDED.updated_at
+                    """
+                ),
+                ("audit_ledger", SCHEMA_VERSION, datetime.now().isoformat()),
+            )
 
     def _rename_existing_invoice_records(self, connection: Any) -> None:
         """Give prior invoices the same download names as newly uploaded files.
@@ -876,6 +907,10 @@ class AuditLedger:
                 FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
             )
             """,
+            "CREATE INDEX IF NOT EXISTS idx_transactions_paid_at ON transactions (paid_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_drafts_updated_at ON drafts (updated_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_recommendation_options_recommendation_rank ON recommendation_options (recommendation_id, rank)",
+            "CREATE INDEX IF NOT EXISTS idx_invoice_files_transaction_uploaded ON transaction_invoice_files (transaction_id, uploaded_at)",
         ]
         for statement in statements:
             connection.execute(statement)

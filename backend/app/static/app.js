@@ -2127,23 +2127,15 @@ async function loadTransactions() {
 
   try {
     setStatus("Loading");
-    const headers = await authHeaders();
-    const [summaryResponse, transactionsResponse, storageResponse] = await Promise.all([
-      fetch("/logs/summary", { headers }),
-      fetch("/transactions", { headers }),
-      fetch("/invoices/storage-summary", { headers }),
-    ]);
-    const failedResponse = [summaryResponse, transactionsResponse, storageResponse].find((response) => !response.ok);
-    if (failedResponse) {
-      const data = await readResponseBody(failedResponse);
+    const response = await fetch("/dashboard", { headers: await authHeaders() });
+    if (!response.ok) {
+      const data = await readResponseBody(response);
       throw new Error(data.detail || "Could not load transaction history.");
     }
-    const summary = await summaryResponse.json();
-    const transactions = await transactionsResponse.json();
-    const storage = await storageResponse.json();
-    renderSummary(summary);
-    renderInvoiceStorage(storage);
-    renderTransactions(transactions);
+    const dashboard = await response.json();
+    renderSummary(dashboard.summary);
+    renderInvoiceStorage(dashboard.storage);
+    renderTransactions(dashboard.transactions);
     setStatus("Ready");
   } catch (error) {
     setStatus("Ready");
@@ -2239,13 +2231,16 @@ async function downloadInvoiceMonth(monthKey, group) {
   const zip = new window.JSZip();
   const usedNames = new Set();
   try {
-    for (let index = 0; index < group.invoices.length; index += 1) {
-      const invoice = group.invoices[index];
-      setStatus(`Preparing invoices (${index + 1}/${group.invoices.length})`);
-      const response = await fetch(`/invoices/${invoice.id}/file`, { headers: await authHeaders() });
+    setStatus(`Preparing ${group.invoices.length} invoice${group.invoices.length === 1 ? "" : "s"}`);
+    const headers = await authHeaders();
+    const files = await Promise.all(group.invoices.map(async (invoice) => {
+      const response = await fetch(`/invoices/${invoice.id}/file`, { headers });
       if (!response.ok) throw new Error(`Could not add ${invoice.filename} to the archive.`);
+      return { invoice, blob: await response.blob() };
+    }));
+    for (const { invoice, blob } of files) {
       const filename = uniqueArchiveFilename(invoice.filename || "invoice", usedNames);
-      zip.file(filename, await response.blob());
+      zip.file(filename, blob);
     }
     const archive = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
     const url = URL.createObjectURL(archive);

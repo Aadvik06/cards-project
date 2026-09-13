@@ -1,11 +1,24 @@
 import os
 import secrets
 import base64
+import asyncio
+import hashlib
 import json
+import threading
+import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request as UrlRequest
 from urllib.request import urlopen
+
+
+# Supabase verifies the login token remotely. Keeping a very short, in-memory
+# cache avoids repeating that network round trip for the same signed-in user on
+# every API request while still respecting token expiry and prompt revocation.
+_AUTH_CACHE_TTL_SECONDS = 90
+_AUTH_CACHE_MAX_ENTRIES = 256
+_auth_cache: dict[str, tuple[float, dict]] = {}
+_auth_cache_lock = threading.Lock()
 
 
 def create_app():
@@ -79,7 +92,9 @@ def create_app():
             if not token:
                 return PlainTextResponse("Login required.", status_code=401)
 
-            user = _supabase_user(supabase_url, supabase_anon_key, token)
+            user = await asyncio.to_thread(
+                _cached_supabase_user, supabase_url, supabase_anon_key, token
+            )
             if user is None:
                 return PlainTextResponse("Invalid login session.", status_code=401)
 
@@ -175,6 +190,39 @@ def _supabase_user(supabase_url: str, supabase_anon_key: str, token: str) -> dic
         return None
 
 
+def _cached_supabase_user(
+    supabase_url: str, supabase_anon_key: str, token: str
+) -> dict | None:
+    """Validate a token once per short window on a warm function instance."""
+    now = time.monotonic()
+    cache_key = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with _auth_cache_lock:
+        cached = _auth_cache.get(cache_key)
+        if cached and cached[0] > now:
+            return cached[1]
+
+    user = _supabase_user(supabase_url, supabase_anon_key, token)
+    if user is None:
+        return None
+
+    expires_at = _jwt_expiry(token)
+    ttl = _AUTH_CACHE_TTL_SECONDS
+    if expires_at is not None:
+        ttl = min(ttl, max(0, int(expires_at - time.time())))
+    if ttl <= 0:
+        return user
+
+    with _auth_cache_lock:
+        if len(_auth_cache) >= _AUTH_CACHE_MAX_ENTRIES:
+            expired_keys = [key for key, value in _auth_cache.items() if value[0] <= now]
+            for key in expired_keys:
+                _auth_cache.pop(key, None)
+            if len(_auth_cache) >= _AUTH_CACHE_MAX_ENTRIES:
+                _auth_cache.pop(next(iter(_auth_cache)), None)
+        _auth_cache[cache_key] = (now + ttl, user)
+    return user
+
+
 def _jwt_aal(token: str) -> str:
     try:
         payload = token.split(".")[1]
@@ -183,3 +231,13 @@ def _jwt_aal(token: str) -> str:
         return decoded.get("aal", "aal1")
     except Exception:
         return "aal1"
+
+
+def _jwt_expiry(token: str) -> float | None:
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(payload.encode("utf-8")))
+        return float(decoded["exp"])
+    except (IndexError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None

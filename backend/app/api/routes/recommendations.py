@@ -133,6 +133,11 @@ def get_transactions() -> list[dict]:
     return get_monthly_log_service().get_all_transactions()
 
 
+@router.get("/dashboard")
+def get_dashboard() -> dict:
+    return get_monthly_log_service().get_dashboard(INVOICE_ARCHIVE_ALLOCATION_BYTES)
+
+
 @router.get("/invoices/storage-summary")
 def get_invoice_storage_summary() -> dict:
     return get_monthly_log_service().ledger.invoice_storage_summary(INVOICE_ARCHIVE_ALLOCATION_BYTES)

@@ -25,8 +25,20 @@ class MonthlyLogService:
         return self.ledger.delete_transaction(transaction_id)
 
     def get_summary(self) -> dict:
-        now = datetime.now()
         transactions = self.ledger.read_transactions()
+        return self._summary_for_transactions(transactions)
+
+    def get_dashboard(self, invoice_allocation_bytes: int) -> dict:
+        """Load the transaction screen from one transaction snapshot."""
+        transactions = self.ledger.read_transactions()
+        return {
+            "summary": self._summary_for_transactions(transactions),
+            "transactions": transactions,
+            "storage": self.ledger.invoice_storage_summary(invoice_allocation_bytes),
+        }
+
+    def _summary_for_transactions(self, transactions: list[dict]) -> dict:
+        now = datetime.now()
         month_rows = [
             row for row in transactions
             if datetime.fromisoformat(row["paid_at"]).year == now.year
