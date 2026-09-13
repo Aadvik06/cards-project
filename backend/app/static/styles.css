@@ -686,13 +686,16 @@ textarea:focus {
 }
 
 .vendor-row.simple {
-  grid-template-columns: minmax(220px, 1fr) 190px;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  padding: 18px;
 }
 
 .voucher-log-fields {
   display: grid;
-  grid-template-columns: minmax(190px, 1fr) minmax(120px, .6fr);
+  grid-template-columns: minmax(220px, 1fr) minmax(160px, .55fr);
   gap: 10px;
+  max-width: 590px;
 }
 
 .vendor-title {

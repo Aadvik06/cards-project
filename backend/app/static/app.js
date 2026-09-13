@@ -117,8 +117,8 @@ const voucherCardInfo = {
   amex: {
     name: "American Express",
     title: "American Express voucher purchase",
-    note: "Tracks Amex points and bonus-cap usage. It does not optimize vendors.",
-    reviewNote: "This voucher will be logged for Amex point and cap tracking. No card optimization is needed.",
+    note: "Records the voucher purchase and adds its points to your Amex totals.",
+    reviewNote: "This voucher purchase will be added to your American Express points and bonus-cap totals.",
   },
   hdfc_infinia: {
     name: "HDFC Infinia",
@@ -713,6 +713,15 @@ function updateFlightOnlyFields() {
   $$(".hotel-only").forEach((field) => {
     field.classList.toggle("is-hidden", state.travelType !== "hotel");
   });
+  $$(".booking-for-field, .booking-date-field").forEach((field) => {
+    field.classList.toggle("is-hidden", state.travelType === "voucher");
+  });
+  const zeroHint = $("#zeroHint");
+  if (zeroHint) {
+    zeroHint.textContent = state.travelType === "voucher"
+      ? "Choose the card used and enter the voucher purchase amount."
+      : "Leave a platform blank or enter 0 to skip it.";
+  }
 }
 
 function titleForType() {
@@ -759,7 +768,7 @@ function renderTripDetails() {
     `;
   } else {
     details.innerHTML = `
-      <label>Voucher vendor<input id="voucherVendor" /></label>
+      <label>Voucher brand<input id="voucherVendor" placeholder="For example, Amazon" /></label>
       <label>Purchase date<input id="voucherDate" type="date" /></label>
     `;
   }
@@ -790,7 +799,7 @@ function renderVendorRows() {
       <div class="vendor-row simple">
         <div class="vendor-title">
           <strong id="voucherCardTitle">American Express voucher purchase</strong>
-          <span id="voucherCardNote">Tracks Amex points and bonus-cap usage. It does not optimize vendors.</span>
+          <span id="voucherCardNote">Records the voucher purchase and adds its points to your Amex totals.</span>
         </div>
         <div class="voucher-log-fields">
           <label>
