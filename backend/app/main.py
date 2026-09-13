@@ -142,6 +142,13 @@ def create_app():
     app.include_router(recommendations_router)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+    @app.middleware("http")
+    async def cache_versioned_static_files(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/static/") and response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
     @app.get("/auth/config", include_in_schema=False)
     def auth_config() -> dict[str, str | bool]:
         supabase_url = os.environ.get("SUPABASE_URL", "").rstrip("/")

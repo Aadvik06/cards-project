@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime
 from decimal import Decimal
@@ -43,6 +44,8 @@ class AuditLedger:
     ) -> None:
         self.database_url = database_url or (os.environ.get("DATABASE_URL") if db_path is None else None)
         self.db_path: Path | None = None
+        self._postgres_pool: Any | None = None
+        self._postgres_pool_lock = threading.Lock()
 
         if self.database_url is None:
             self.db_path = Path(db_path or "data/runtime/cards_project.sqlite3")
@@ -682,10 +685,14 @@ class AuditLedger:
                     "psycopg is required when DATABASE_URL is set. Install backend/requirements.txt."
                 ) from exc
 
+            pool = self._get_postgres_pool()
+            if pool is not None:
+                with pool.connection(timeout=8) as connection:
+                    yield connection
+                return
+
             connection = psycopg.connect(
-                self._postgres_url(),
-                row_factory=dict_row,
-                prepare_threshold=None,
+                self._postgres_url(), row_factory=dict_row, prepare_threshold=None
             )
         else:
             connection = sqlite3.connect(self.db_path)
@@ -695,8 +702,40 @@ class AuditLedger:
         try:
             yield connection
             connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             connection.close()
+
+    def _get_postgres_pool(self) -> Any | None:
+        """Reuse a few PostgreSQL connections while a Vercel instance is warm.
+
+        The optional fallback keeps local development functional if the pool
+        package has not yet been installed. Production installs it from the
+        requirements files.
+        """
+        if not self.database_url:
+            return None
+        if self._postgres_pool is not None:
+            return self._postgres_pool
+        with self._postgres_pool_lock:
+            if self._postgres_pool is not None:
+                return self._postgres_pool
+            try:
+                from psycopg.rows import dict_row
+                from psycopg_pool import ConnectionPool
+            except ImportError:
+                return None
+            self._postgres_pool = ConnectionPool(
+                conninfo=self._postgres_url(),
+                min_size=1,
+                max_size=4,
+                timeout=8,
+                max_idle=120,
+                kwargs={"row_factory": dict_row, "prepare_threshold": None},
+            )
+            return self._postgres_pool
 
     def _sql(self, sql: str) -> str:
         if self.database_url:
