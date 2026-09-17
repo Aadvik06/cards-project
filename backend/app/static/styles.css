@@ -1513,10 +1513,39 @@ body::before {
 }
 
 .top-actions {
-  padding: 6px;
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.top-tabs {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  padding: 5px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(245, 247, 243, 0.78);
+  border-radius: 10px;
+  background: rgba(245, 247, 243, 0.82);
+}
+
+.top-tabs .tab-button {
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.top-utilities {
+  display: flex;
+  grid-column: 2;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
 }
 
 .voucher-info-button {
@@ -2391,6 +2420,26 @@ select:disabled {
   .top-actions,
   .actions.split > div,
   .invoice-upload-panel {
+    width: 100%;
+  }
+
+  .top-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .top-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .top-utilities {
+    display: grid;
+    grid-column: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .top-utilities .status-pill {
+    grid-column: 1 / -1;
     width: 100%;
   }
 

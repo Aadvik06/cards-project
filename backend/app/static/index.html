@@ -6,7 +6,7 @@
     <title>PreciseHub</title>
     <link rel="apple-touch-icon" sizes="180x180" href="/static/assets/apple-touch-icon.png?v=20260914-performance" />
     <link rel="icon" type="image/png" href="/static/assets/favicon.png?v=20260914-performance" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260917-voucher-validity" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260917-topbar-layout" />
   </head>
   <body class="auth-pending">
     <section class="auth-screen is-hidden" id="authGate">
@@ -53,16 +53,20 @@
         </div>
       </div>
       <div class="top-actions">
-        <button class="tab-button is-active" id="bookingTab" type="button">Booking</button>
-        <button class="tab-button" id="draftsTab" type="button">Drafts</button>
-        <button class="tab-button" id="transactionsTab" type="button">Past transactions</button>
-        <button class="tab-button" id="invoicesTab" type="button">Invoices</button>
-        <button class="voucher-info-button" id="voucherInfoButton" type="button" aria-haspopup="dialog" aria-controls="voucherLimitsDialog">
-          <span aria-hidden="true">i</span>
-          Voucher limits
-        </button>
-        <button class="secondary compact is-hidden" id="logoutButton" type="button">Logout</button>
-        <div class="status-pill" id="saveStatus">Ready</div>
+        <nav class="top-tabs" aria-label="Main navigation">
+          <button class="tab-button is-active" id="bookingTab" type="button">Booking</button>
+          <button class="tab-button" id="draftsTab" type="button">Drafts</button>
+          <button class="tab-button" id="transactionsTab" type="button">Past transactions</button>
+          <button class="tab-button" id="invoicesTab" type="button">Invoices</button>
+        </nav>
+        <div class="top-utilities">
+          <button class="voucher-info-button" id="voucherInfoButton" type="button" aria-haspopup="dialog" aria-controls="voucherLimitsDialog">
+            <span aria-hidden="true">i</span>
+            Voucher limits
+          </button>
+          <button class="secondary compact is-hidden" id="logoutButton" type="button">Logout</button>
+          <div class="status-pill" id="saveStatus">Ready</div>
+        </div>
       </div>
     </header>
 
