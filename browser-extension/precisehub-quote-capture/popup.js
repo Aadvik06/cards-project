@@ -110,7 +110,10 @@ captureButton.addEventListener("click", async () => {
     await chrome.scripting.executeScript({
       target: { tabId: target.id },
       args: [{ ...activeCapture, amount }],
-      func: (capture) => window.postMessage({ channel: "precisehub-quote-capture", capture }, window.location.origin),
+      func: (capture) => {
+        document.documentElement.dataset.precisehubQuoteCapture = JSON.stringify(capture);
+        window.dispatchEvent(new Event("precisehub-quote-capture"));
+      },
     });
     setStatus("Quote sent. Review it in PreciseHub before adding it.");
   } catch {

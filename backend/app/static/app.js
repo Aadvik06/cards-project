@@ -766,6 +766,16 @@ function setupQuoteCapture() {
     if (!message || message.channel !== "precisehub-quote-capture" || !message.capture) return;
     showCapture(message.capture);
   });
+  window.addEventListener("precisehub-quote-capture", () => {
+    const rawCapture = document.documentElement.dataset.precisehubQuoteCapture;
+    delete document.documentElement.dataset.precisehubQuoteCapture;
+    if (!rawCapture) return;
+    try {
+      showCapture(JSON.parse(rawCapture));
+    } catch {
+      showToast("The captured quote could not be read. Please try again.", true);
+    }
+  });
 
   closeButtons.forEach((button) => button.addEventListener("click", closeDialog));
   dialog.addEventListener("click", (event) => {
