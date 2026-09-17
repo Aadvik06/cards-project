@@ -22,9 +22,10 @@ The current link is captured automatically and is passed through to the existing
 4. Select this `precisehub-quote-capture` folder.
 5. Pin the extension from the browser extensions menu.
 
-The production PreciseHub address in `manifest.json` and `popup.js` is:
+The extension currently recognises these live PreciseHub addresses:
 
 ```text
+https://cards-project-kappa.vercel.app/
 https://precisehub-git-main-precise-hub.vercel.app/
 ```
 

@@ -1,5 +1,7 @@
-const PRECISEHUB_URL = "https://precisehub-git-main-precise-hub.vercel.app/";
-const PRECISEHUB_MATCH_PATTERN = "https://precisehub-git-main-precise-hub.vercel.app/*";
+const PRECISEHUB_MATCH_PATTERNS = [
+  "https://cards-project-kappa.vercel.app/*",
+  "https://precisehub-git-main-precise-hub.vercel.app/*",
+];
 
 const supportedPlatforms = [
   { key: "makemytrip", name: "MakeMyTrip", domains: ["makemytrip.com"] },
@@ -97,7 +99,7 @@ captureButton.addEventListener("click", async () => {
   captureButton.disabled = true;
   setStatus("Sending quote to PreciseHub…");
   try {
-    const tabs = await chrome.tabs.query({ url: [PRECISEHUB_MATCH_PATTERN] });
+    const tabs = await chrome.tabs.query({ url: PRECISEHUB_MATCH_PATTERNS });
     if (!tabs.length) {
       setStatus("Open PreciseHub and start a flight or hotel booking first.", true);
       refreshCaptureButton();

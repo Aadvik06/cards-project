@@ -8,5 +8,8 @@
     "default_popup": "popup.html"
   },
   "permissions": ["activeTab", "scripting", "tabs"],
-  "host_permissions": ["https://precisehub-git-main-precise-hub.vercel.app/*"]
+  "host_permissions": [
+    "https://cards-project-kappa.vercel.app/*",
+    "https://precisehub-git-main-precise-hub.vercel.app/*"
+  ]
 }
