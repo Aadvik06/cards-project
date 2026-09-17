@@ -109,7 +109,6 @@ captureButton.addEventListener("click", async () => {
     await chrome.tabs.update(target.id, { active: true });
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: target.id },
-      world: "MAIN",
       args: [{ ...activeCapture, amount }],
       func: (capture) => {
         const vendorIdsByPlatform = {
@@ -145,8 +144,11 @@ captureButton.addEventListener("click", async () => {
       throw new Error(result?.result?.message || "PreciseHub could not accept this quote.");
     }
     setStatus("Quote added. Review GST and voucher value in PreciseHub.");
-  } catch {
-    setStatus("Could not add the quote. Keep PreciseHub open on the matching Step 2 booking and try again.", true);
+  } catch (error) {
+    setStatus(
+      error?.message || "Could not add the quote. Keep PreciseHub open on the matching Step 2 booking and try again.",
+      true,
+    );
     refreshCaptureButton();
   }
 });
