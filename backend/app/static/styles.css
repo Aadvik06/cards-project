@@ -1650,6 +1650,12 @@ body::before {
 
 .voucher-limit-row b { color: var(--accent-strong); font-size: 15px; }
 
+.voucher-limit-row small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .voucher-limit-note {
   margin-top: 16px;
   color: var(--muted);
