@@ -26,6 +26,7 @@ const state = {
   currentDraftId: null,
   highestStep: 1,
   removedVendorIds: new Set(),
+  pendingCapturedQuote: null,
 };
 
 let toastTimer;
@@ -48,6 +49,15 @@ const amexTravelVoucherVendors = new Set([
   "amex_mmt_hotel_voucher",
   "amex_cleartrip_hotel_voucher",
 ]);
+
+const capturedQuoteVendors = {
+  makemytrip: { flight: "amex_mmt_flight_voucher", hotel: "amex_mmt_hotel_voucher", name: "MakeMyTrip" },
+  cleartrip: { flight: "amex_cleartrip_generic_voucher", hotel: "amex_cleartrip_hotel_voucher", name: "Cleartrip" },
+  goibibo: { hotel: "amex_goibibo_hotel_voucher", name: "Goibibo" },
+  easemytrip: { hotel: "amex_easemytrip_hotel_voucher", name: "EaseMyTrip" },
+  hdfc_smartbuy: { flight: "hdfc_smartbuy_flight", hotel: "hdfc_smartbuy_hotel", name: "HDFC SmartBuy" },
+  icici_ishop: { flight: "icici_ishop_flight", hotel: "icici_ishop_hotel", name: "ICICI iShop" },
+};
 
 const indianStates = [
   "Andhra Pradesh",
@@ -703,6 +713,85 @@ function setupVoucherLimitsDialog() {
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !dialog.classList.contains("is-hidden")) closeDialog();
+  });
+}
+
+function setupQuoteCapture() {
+  const dialog = $("#quoteCaptureDialog");
+  const closeButtons = [$("#closeQuoteCapture"), $("#cancelQuoteCapture")];
+  const closeDialog = () => {
+    dialog.classList.add("is-hidden");
+    state.pendingCapturedQuote = null;
+  };
+
+  const showCapture = (capture) => {
+    if (!state.travelType || state.travelType === "voucher") {
+      showToast("Start a flight or hotel booking before capturing a quote.", true);
+      return;
+    }
+    const configuredVendor = capturedQuoteVendors[capture.vendor_key];
+    const vendorId = configuredVendor?.[state.travelType];
+    if (!vendorId) {
+      showToast(`${configuredVendor?.name || "This platform"} is not available for this booking type.`, true);
+      return;
+    }
+    const amount = Number(capture.amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast("Choose the final price on the travel site, then capture the quote again.", true);
+      return;
+    }
+    let link;
+    try {
+      link = new URL(capture.url);
+      if (!["http:", "https:"].includes(link.protocol)) throw new Error("Unsupported link");
+    } catch {
+      showToast("The captured platform link is not valid.", true);
+      return;
+    }
+    state.pendingCapturedQuote = { vendorId, vendorName: configuredVendor.name, amount, url: link.href, title: String(capture.title || "").trim() };
+    $("#quoteCaptureSummary").innerHTML = `
+      <span class="capture-vendor">${escapeHtml(configuredVendor.name)}</span>
+      <span>Will be added to the matching ${state.travelType} option.</span>
+      ${capture.title ? `<small>${escapeHtml(capture.title)}</small>` : ""}
+    `;
+    $("#capturedQuoteAmount").value = amount.toFixed(2);
+    $("#capturedQuoteLink").value = link.href;
+    dialog.classList.remove("is-hidden");
+    $("#capturedQuoteAmount").focus();
+  };
+
+  window.addEventListener("message", (event) => {
+    if (event.source !== window || event.origin !== window.location.origin) return;
+    const message = event.data;
+    if (!message || message.channel !== "precisehub-quote-capture" || !message.capture) return;
+    showCapture(message.capture);
+  });
+
+  closeButtons.forEach((button) => button.addEventListener("click", closeDialog));
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) closeDialog();
+  });
+  $("#confirmQuoteCapture").addEventListener("click", () => {
+    const capture = state.pendingCapturedQuote;
+    const amount = Number($("#capturedQuoteAmount").value || 0);
+    if (!capture || !Number.isFinite(amount) || amount <= 0) {
+      showToast("Enter a valid total price before adding this quote.", true);
+      return;
+    }
+    const amountInput = document.querySelector(`[data-vendor-amount="${capture.vendorId}"]`);
+    const linkInput = document.querySelector(`[data-vendor-link="${capture.vendorId}"]`);
+    if (!amountInput || !linkInput) {
+      showToast("This vendor is not active in the current booking. Restore it, then capture the quote again.", true);
+      return;
+    }
+    state.removedVendorIds.delete(capture.vendorId);
+    amountInput.closest(".vendor-row")?.classList.remove("is-hidden");
+    amountInput.value = amount.toFixed(2);
+    linkInput.value = capture.url;
+    amountInput.dispatchEvent(new Event("input", { bubbles: true }));
+    linkInput.dispatchEvent(new Event("input", { bubbles: true }));
+    closeDialog();
+    showToast(`${capture.vendorName} quote added. Review GST and voucher value before continuing.`);
   });
 }
 
@@ -3011,6 +3100,7 @@ function formatFileSize(bytes) {
 
 setupTabs();
 setupVoucherLimitsDialog();
+setupQuoteCapture();
 setupStepNavigation();
 setupTripChoices();
 setupQuoteForm();

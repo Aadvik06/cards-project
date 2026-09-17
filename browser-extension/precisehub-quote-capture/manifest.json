@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "PreciseHub Quote Capture",
+  "version": "0.1.0",
+  "description": "Capture a reviewed travel quote and its listing link into an open PreciseHub booking.",
+  "action": {
+    "default_title": "Capture PreciseHub quote",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["activeTab", "scripting", "tabs"],
+  "host_permissions": ["https://precisehub-git-main-precise-hub.vercel.app/*"]
+}

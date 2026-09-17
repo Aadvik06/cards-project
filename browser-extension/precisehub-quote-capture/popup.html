@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PreciseHub Quote Capture</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">PreciseHub</p>
+      <h1>Capture quote</h1>
+      <p class="intro">Highlight the final price on the travel website, then confirm it here.</p>
+
+      <dl class="site-summary">
+        <div><dt>Platform</dt><dd id="vendorName">Checking page…</dd></div>
+        <div><dt>Link</dt><dd id="linkStatus">Current page</dd></div>
+      </dl>
+
+      <label>
+        Total price
+        <input id="price" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Select the final price on the page" />
+      </label>
+      <p class="hint" id="priceHint"></p>
+      <button id="captureButton" type="button" disabled>Add to open PreciseHub booking</button>
+      <p class="status" id="status" aria-live="polite"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

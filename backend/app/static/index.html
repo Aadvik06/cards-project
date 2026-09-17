@@ -6,7 +6,7 @@
     <title>PreciseHub</title>
     <link rel="apple-touch-icon" sizes="180x180" href="/static/assets/apple-touch-icon.png?v=20260914-performance" />
     <link rel="icon" type="image/png" href="/static/assets/favicon.png?v=20260914-performance" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260917-topbar-layout" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260917-quote-capture" />
   </head>
   <body class="auth-pending">
     <section class="auth-screen is-hidden" id="authGate">
@@ -99,6 +99,33 @@
           </article>
         </div>
         <p class="voucher-limit-note">These are the limits used in PreciseHub’s recommendations. Seller terms can change, so confirm them at checkout for an unusually large booking.</p>
+      </section>
+    </div>
+
+    <div class="voucher-limits-backdrop is-hidden" id="quoteCaptureDialog" role="presentation">
+      <section class="voucher-limits-dialog quote-capture-dialog" role="dialog" aria-modal="true" aria-labelledby="quoteCaptureTitle" aria-describedby="quoteCaptureDescription">
+        <div class="voucher-limits-dialog-head">
+          <div>
+            <p class="eyebrow">Quote capture</p>
+            <h2 id="quoteCaptureTitle">Review captured quote</h2>
+            <p id="quoteCaptureDescription">Confirm the price before it is added to this booking.</p>
+          </div>
+          <button class="dialog-close" id="closeQuoteCapture" type="button" aria-label="Close quote capture">×</button>
+        </div>
+        <div class="quote-capture-summary" id="quoteCaptureSummary"></div>
+        <label>
+          Total price
+          <input id="capturedQuoteAmount" inputmode="decimal" min="0.01" step="0.01" type="number" required />
+        </label>
+        <label>
+          Listing link
+          <input id="capturedQuoteLink" type="url" readonly />
+        </label>
+        <p class="voucher-limit-note">The platform link is saved with the quote and included at the bottom of the PDF. No price is saved until you confirm.</p>
+        <div class="actions quote-capture-actions">
+          <button class="secondary" id="cancelQuoteCapture" type="button">Cancel</button>
+          <button class="primary" id="confirmQuoteCapture" type="button">Add quote</button>
+        </div>
       </section>
     </div>
 
@@ -360,6 +387,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-    <script src="/static/app.js?v=20260917-upload-reliability"></script>
+    <script src="/static/app.js?v=20260917-quote-capture"></script>
   </body>
 </html>

@@ -1692,6 +1692,56 @@ body::before {
   line-height: 1.5;
 }
 
+.quote-capture-dialog {
+  display: grid;
+  gap: 14px;
+}
+
+.quote-capture-dialog .voucher-limits-dialog-head { margin-bottom: 0; }
+
+.quote-capture-summary {
+  display: grid;
+  gap: 4px;
+  padding: 13px 14px;
+  border: 1px solid rgba(18, 110, 90, 0.16);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(226, 241, 235, 0.76), rgba(255, 255, 255, 0.95));
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.quote-capture-summary .capture-vendor {
+  color: var(--accent-strong);
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.quote-capture-summary small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-capture-dialog > label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.quote-capture-dialog input[readonly] {
+  color: var(--muted);
+  background: #f7faf8;
+}
+
+.quote-capture-actions {
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
 .tab-button,
 .status-pill {
   border-color: transparent;
