@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PreciseHub Quote Capture",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Capture a reviewed travel quote and its listing link into an open PreciseHub booking.",
   "action": {
     "default_title": "Capture PreciseHub quote",
