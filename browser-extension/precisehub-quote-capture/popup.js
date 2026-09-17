@@ -107,15 +107,46 @@ captureButton.addEventListener("click", async () => {
     }
     const target = tabs.find((tab) => tab.active) || tabs[0];
     await chrome.tabs.update(target.id, { active: true });
-    await chrome.scripting.executeScript({
+    const [result] = await chrome.scripting.executeScript({
       target: { tabId: target.id },
       world: "MAIN",
       args: [{ ...activeCapture, amount }],
-      func: (capture) => window.postMessage({ channel: "precisehub-quote-capture", capture }, window.location.origin),
+      func: (capture) => {
+        const vendorIdsByPlatform = {
+          makemytrip: ["amex_mmt_flight_voucher", "amex_mmt_hotel_voucher"],
+          cleartrip: ["amex_cleartrip_generic_voucher", "amex_cleartrip_hotel_voucher"],
+          goibibo: ["amex_goibibo_hotel_voucher"],
+          easemytrip: ["amex_easemytrip_hotel_voucher"],
+          hdfc_smartbuy: ["hdfc_smartbuy_flight", "hdfc_smartbuy_hotel"],
+          icici_ishop: ["icici_ishop_flight", "icici_ishop_hotel"],
+        };
+        const vendorId = (vendorIdsByPlatform[capture.vendor_key] || []).find((id) =>
+          document.querySelector(`[data-vendor-amount="${id}"]`)
+        );
+        if (!vendorId) {
+          return { success: false, message: "Open the matching flight or hotel booking in PreciseHub Step 2 first." };
+        }
+        const amountInput = document.querySelector(`[data-vendor-amount="${vendorId}"]`);
+        const linkInput = document.querySelector(`[data-vendor-link="${vendorId}"]`);
+        if (!amountInput || !linkInput) {
+          return { success: false, message: "The matching vendor is not active in this PreciseHub booking." };
+        }
+        amountInput.value = Number(capture.amount).toFixed(2);
+        linkInput.value = capture.url;
+        for (const input of [amountInput, linkInput]) {
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        amountInput.closest(".vendor-row")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        return { success: true, vendorId };
+      },
     });
-    setStatus("Quote sent. Review it in PreciseHub before adding it.");
+    if (!result?.result?.success) {
+      throw new Error(result?.result?.message || "PreciseHub could not accept this quote.");
+    }
+    setStatus("Quote added. Review GST and voucher value in PreciseHub.");
   } catch {
-    setStatus("Could not reach PreciseHub. Keep the booking open and try again.", true);
+    setStatus("Could not add the quote. Keep PreciseHub open on the matching Step 2 booking and try again.", true);
     refreshCaptureButton();
   }
 });
