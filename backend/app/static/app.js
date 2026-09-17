@@ -672,6 +672,32 @@ function setupTabs() {
   $("#invoicesTab").addEventListener("click", loadInvoices);
 }
 
+function setupVoucherLimitsDialog() {
+  const dialog = $("#voucherLimitsDialog");
+  const openButton = $("#voucherInfoButton");
+  const closeButton = $("#closeVoucherInfo");
+  let returnFocusTo = null;
+
+  const closeDialog = () => {
+    dialog.classList.add("is-hidden");
+    returnFocusTo?.focus();
+    returnFocusTo = null;
+  };
+
+  openButton.addEventListener("click", () => {
+    returnFocusTo = openButton;
+    dialog.classList.remove("is-hidden");
+    closeButton.focus();
+  });
+  closeButton.addEventListener("click", closeDialog);
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) closeDialog();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !dialog.classList.contains("is-hidden")) closeDialog();
+  });
+}
+
 function setupStepNavigation() {
   $$(".step").forEach((step) => {
     step.addEventListener("click", () => {
@@ -2929,6 +2955,7 @@ function formatFileSize(bytes) {
 }
 
 setupTabs();
+setupVoucherLimitsDialog();
 setupStepNavigation();
 setupTripChoices();
 setupQuoteForm();
