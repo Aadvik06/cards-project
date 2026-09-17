@@ -29,6 +29,7 @@ const state = {
 };
 
 let toastTimer;
+const invoiceFileSelections = new Map();
 
 const noDiscountVendors = new Set([
   "hdfc_smartbuy_flight",
@@ -98,6 +99,13 @@ const auth = {
 };
 
 const MAX_INVOICE_UPLOAD_BYTES = 50 * 1024 * 1024;
+const invoiceContentTypesByExtension = {
+  pdf: "application/pdf",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+};
 
 const cardNames = {
   amex: "American Express",
@@ -2774,6 +2782,49 @@ function invoiceUploadControl(transactionId) {
   `;
 }
 
+function invoiceContentType(file) {
+  const extension = String(file?.name || "").split(".").pop().toLowerCase();
+  return invoiceContentTypesByExtension[extension] || file?.type || "";
+}
+
+function updateInvoiceFileLabel(transactionId) {
+  const label = document.querySelector(`[data-invoice-file-label="${transactionId}"]`);
+  if (!label) return;
+  const files = invoiceFileSelections.get(transactionId) || [];
+  label.textContent = files.length
+    ? `${files.length} file${files.length === 1 ? "" : "s"} selected · ready to upload`
+    : "Multiple PDF, JPG, PNG or WEBP files · up to 50 MB each";
+}
+
+function selectInvoiceFiles(transactionId, selectedFiles) {
+  const files = [...(selectedFiles || [])];
+  if (!files.length) return;
+  const invalidFile = files.find((file) => !invoiceContentTypesByExtension[String(file.name || "").split(".").pop().toLowerCase()]);
+  if (invalidFile) {
+    showToast(`“${invalidFile.name}” is not a PDF, JPG, PNG or WEBP file.`, true);
+    return;
+  }
+  const tooLargeFile = files.find((file) => file.size <= 0 || file.size > MAX_INVOICE_UPLOAD_BYTES);
+  if (tooLargeFile) {
+    showToast(`“${tooLargeFile.name}” must be between 1 byte and 50 MB.`, true);
+    return;
+  }
+  invoiceFileSelections.set(transactionId, files);
+  updateInvoiceFileLabel(transactionId);
+}
+
+async function uploadInvoiceFile(prepared, file, contentType) {
+  const upload = () => auth.client.storage.from(prepared.bucket)
+    .uploadToSignedUrl(prepared.storage_path, prepared.token, file, { contentType });
+  let { error } = await upload();
+  if (error) {
+    // A second attempt makes brief network handoffs (common on mobile and VPN connections) recover cleanly.
+    await new Promise((resolve) => window.setTimeout(resolve, 350));
+    ({ error } = await upload());
+  }
+  if (error) throw new Error(error.message || "Could not upload the invoice. Check your connection and try again.");
+}
+
 function renderInvoiceUpload(transactionId, invoice, targetSelector) {
   const target = $(targetSelector);
   target.innerHTML = `
@@ -2804,17 +2855,15 @@ function setupInvoiceActions() {
       dropzone.classList.remove("is-dragging");
       const input = dropzone.querySelector("input[type=file]");
       if (!input || !event.dataTransfer?.files?.length) return;
-      input.files = event.dataTransfer.files;
-      input.dispatchEvent(new Event("change", { bubbles: true }));
+      // Keep the chosen files in app state instead of assigning input.files, which is not reliable in Safari.
+      selectInvoiceFiles(input.dataset.invoiceFile, event.dataTransfer.files);
     });
   });
   $$("[data-invoice-file]").forEach((input) => {
     if (input.dataset.bound) return;
     input.dataset.bound = "true";
     input.addEventListener("change", () => {
-      const label = document.querySelector(`[data-invoice-file-label="${input.dataset.invoiceFile}"]`);
-      const files = [...(input.files || [])];
-      if (label) label.textContent = files.length ? `${files.length} file${files.length === 1 ? "" : "s"} selected` : "Multiple PDF, JPG, PNG or WEBP files · up to 50 MB each";
+      selectInvoiceFiles(input.dataset.invoiceFile, input.files);
     });
   });
   $$("[data-save-invoice]").forEach((button) => {
@@ -2822,25 +2871,28 @@ function setupInvoiceActions() {
     button.dataset.bound = "true";
     button.addEventListener("click", async () => {
       const transactionId = button.dataset.saveInvoice;
-      const files = [...(document.querySelector(`[data-invoice-file="${transactionId}"]`)?.files || [])];
+      const files = invoiceFileSelections.get(transactionId)
+        || [...(document.querySelector(`[data-invoice-file="${transactionId}"]`)?.files || [])];
       if (!files.length) {
         showToast("Choose one or more invoice files first.", true);
         return;
       }
-      if (files.some((file) => file.size > MAX_INVOICE_UPLOAD_BYTES)) {
-        showToast("Invoice files must be 50 MB or smaller.", true);
+      if (files.some((file) => file.size <= 0 || file.size > MAX_INVOICE_UPLOAD_BYTES)) {
+        showToast("Invoice files must be between 1 byte and 50 MB.", true);
         return;
       }
       try {
+        button.disabled = true;
+        button.textContent = "Uploading…";
         setStatus("Uploading invoice");
         for (const file of files) {
-          const uploadRequest = { filename: file.name, content_type: file.type, file_size_bytes: file.size };
+          const contentType = invoiceContentType(file);
+          const uploadRequest = { filename: file.name, content_type: contentType, file_size_bytes: file.size };
           const prepared = await postJson(`/transactions/${transactionId}/invoice/upload-url`, uploadRequest);
-          const { error: uploadError } = await auth.client.storage.from(prepared.bucket)
-            .uploadToSignedUrl(prepared.storage_path, prepared.token, file, { contentType: file.type });
-          if (uploadError) throw new Error(uploadError.message || "Could not upload the invoice.");
+          await uploadInvoiceFile(prepared, file, contentType);
           await postJson(`/transactions/${transactionId}/invoice/complete`, { ...uploadRequest, filename: prepared.filename, storage_path: prepared.storage_path });
         }
+        invoiceFileSelections.delete(transactionId);
         setStatus("Saved");
         showToast(`${files.length} invoice file${files.length === 1 ? "" : "s"} uploaded.`);
         if ($("#transactionsView").classList.contains("is-hidden")) {
@@ -2851,6 +2903,9 @@ function setupInvoiceActions() {
       } catch (error) {
         setStatus("Ready");
         showToast(error.message, true);
+      } finally {
+        button.disabled = false;
+        button.textContent = "Upload files";
       }
     });
   });
